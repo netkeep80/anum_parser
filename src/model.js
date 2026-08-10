@@ -1,4 +1,16 @@
-export const FORMAT_VERSION = "0.1";
+export const FORMAT_VERSION = "0.2";
+
+const ROOT_LINKS = Object.freeze([
+  { id: "R", start: "R", end: "R", tags: ["root"] },
+  { id: "O", start: "O", end: "R", tags: ["root-abit", "opening"] },
+  { id: "C", start: "R", end: "C", tags: ["root-abit", "closing"] },
+  { id: "L", start: "O", end: "C", tags: ["root-abit", "linked"] },
+  { id: "U", start: "C", end: "O", tags: ["root-abit", "unlinked"] },
+]);
+
+const ROOT_LABELS = Object.freeze({ R: "∞", O: "[", C: "]", L: "1", U: "0" });
+
+export const ABIT_REFS = Object.freeze({ "[": "O", "]": "C", "1": "L", "0": "U" });
 
 export class AsetBuilder {
   constructor({ source = null } = {}) {
@@ -6,9 +18,10 @@ export class AsetBuilder {
     this.aset = {
       format: "mts-aset",
       version: FORMAT_VERSION,
+      identity: "by-poles",
       root: "R",
-      links: [{ id: "R", start: "R", end: "R", tags: ["root"] }],
-      labels: { R: "∞" },
+      links: ROOT_LINKS.map((link) => structuredClone(link)),
+      labels: { ...ROOT_LABELS },
       symbolSequences: [],
       abitSequences: [],
       linkSequences: [],
@@ -16,7 +29,8 @@ export class AsetBuilder {
       storedAnums: [],
       provenance: source ? { source } : {},
     };
-    this.ids = new Set(["R"]);
+    this.ids = new Set(ROOT_LINKS.map((link) => link.id));
+    this.pairs = new Map(ROOT_LINKS.map((link) => [pairKey(link.start, link.end), link.id]));
   }
 
   nextId(prefix = "L") {
@@ -28,24 +42,48 @@ export class AsetBuilder {
     return id;
   }
 
-  link(start, end, { id = null, label = null, tags = [] } = {}) {
+  ensureLink(start, end, { id = null, label = null, tags = [] } = {}) {
     if (!this.ids.has(start) || !this.ids.has(end)) {
       throw new Error(`link endpoints must exist: ${start} -> ${end}`);
     }
+
+    const key = pairKey(start, end);
+    const existing = this.pairs.get(key);
+    if (existing) {
+      if (id !== null && id !== existing) {
+        throw new Error(`link ${start} -> ${end} already exists as ${existing}, cannot alias it as ${id}`);
+      }
+      this.mergeMetadata(existing, label, tags);
+      return { ref: existing, created: false };
+    }
+
     const ref = id ?? this.nextId("L");
     if (this.ids.has(ref)) {
-      throw new Error(`duplicate exact link id: ${ref}`);
+      throw new Error(`duplicate link id: ${ref}`);
     }
     this.ids.add(ref);
-    this.aset.links.push({ id: ref, start, end, ...(tags.length ? { tags } : {}) });
+    this.pairs.set(key, ref);
+    this.aset.links.push({ id: ref, start, end, ...(tags.length ? { tags: [...new Set(tags)] } : {}) });
     if (label !== null) this.aset.labels[ref] = label;
-    return ref;
+    return { ref, created: true };
   }
 
-  occurrence(label, tag = "symbol-occurrence") {
-    // Лабораторный exact handle: полюса могут совпадать с R, но occurrence
-    // отличается exact id. Это не нормативное определение символов МТС.
-    return this.link("R", "R", { label, tags: [tag] });
+  link(start, end, options = {}) {
+    return this.ensureLink(start, end, options).ref;
+  }
+
+  symbolValue(symbol) {
+    const bytes = new TextEncoder().encode(symbol);
+    if (bytes.length === 0) throw new Error("empty symbol cannot be resolved as one value");
+    let current = "R";
+    for (const byte of bytes) {
+      for (let bit = 7; bit >= 0; bit -= 1) {
+        const ref = ((byte >> bit) & 1) === 1 ? "L" : "U";
+        current = this.link(current, ref, { tags: ["utf8-symbol-code-step"] });
+      }
+    }
+    this.mergeMetadata(current, `symbol:${JSON.stringify(symbol)}`, ["utf8-symbol-value"]);
+    return current;
   }
 
   leftFold(refs, { tag = "denotation-step", labelPrefix = "fold" } = {}) {
@@ -54,11 +92,12 @@ export class AsetBuilder {
     const created = [];
     let current = refs[0];
     for (let i = 1; i < refs.length; i += 1) {
-      current = this.link(current, refs[i], {
+      const ensured = this.ensureLink(current, refs[i], {
         label: `${labelPrefix}:${i}`,
         tags: [tag],
       });
-      created.push(current);
+      current = ensured.ref;
+      if (ensured.created) created.push(current);
     }
     return { result: current, created };
   }
@@ -67,8 +106,9 @@ export class AsetBuilder {
     const created = [];
     let current = "R";
     for (const ref of refs) {
-      current = this.link(current, ref, { tags: [tag] });
-      created.push(current);
+      const ensured = this.ensureLink(current, ref, { tags: [tag] });
+      current = ensured.ref;
+      if (ensured.created) created.push(current);
     }
     const chainId = id ?? `carrier:${this.aset.rootChains.length}`;
     this.aset.rootChains.push({
@@ -128,31 +168,54 @@ export class AsetBuilder {
   finish() {
     return structuredClone(this.aset);
   }
+
+  mergeMetadata(ref, label, tags) {
+    if (label !== null && this.aset.labels[ref] === undefined) this.aset.labels[ref] = label;
+    if (!tags.length) return;
+    const link = this.aset.links.find((item) => item.id === ref);
+    if (!link) return;
+    link.tags = [...new Set([...(link.tags ?? []), ...tags])];
+  }
 }
 
 export function validateAset(aset) {
   const errors = [];
   if (!aset || aset.format !== "mts-aset") errors.push("format must be mts-aset");
   if (aset?.version !== FORMAT_VERSION) errors.push(`unsupported aset version: ${aset?.version}`);
+  if (aset?.identity !== "by-poles") errors.push("identity must be by-poles");
   if (!Array.isArray(aset?.links)) errors.push("links must be an array");
   if (errors.length) return errors;
 
   const ids = new Set();
+  const pairs = new Map();
   for (const link of aset.links) {
     if (!link?.id || ids.has(link.id)) {
       errors.push(`duplicate or empty link id: ${link?.id}`);
       continue;
     }
     ids.add(link.id);
+    const key = pairKey(link.start, link.end);
+    const prior = pairs.get(key);
+    if (prior) errors.push(`duplicate link form ${link.start} -> ${link.end}: ${prior}, ${link.id}`);
+    else pairs.set(key, link.id);
   }
-  if (!ids.has(aset.root)) errors.push("missing distinguished root link");
+
+  if (aset.root !== "R") errors.push("format 0.2 requires distinguished root id R");
   for (const link of aset.links) {
     if (!ids.has(link.start)) errors.push(`dangling start ref ${link.start} in ${link.id}`);
     if (!ids.has(link.end)) errors.push(`dangling end ref ${link.end} in ${link.id}`);
   }
-  const root = aset.links.find((link) => link.id === aset.root);
-  if (root && (root.start !== root.id || root.end !== root.id)) {
-    errors.push("distinguished root must be exactly self-closed in format 0.1");
+
+  const kernel = new Map(ROOT_LINKS.map((link) => [link.id, link]));
+  for (const [id, expected] of kernel) {
+    const actual = aset.links.find((link) => link.id === id);
+    if (!actual) {
+      errors.push(`missing root-kernel link ${id}`);
+      continue;
+    }
+    if (actual.start !== expected.start || actual.end !== expected.end) {
+      errors.push(`invalid root-kernel form ${id}: expected ${expected.start} -> ${expected.end}`);
+    }
   }
   return errors;
 }
@@ -167,4 +230,8 @@ export function describeLink(aset, id) {
   if (!link) return id;
   const label = aset.labels?.[id];
   return label ? `${id} «${label}»` : `${id} = ${link.start} ⟼ ${link.end}`;
+}
+
+function pairKey(start, end) {
+  return JSON.stringify([start, end]);
 }
