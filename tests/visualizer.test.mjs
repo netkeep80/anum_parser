@@ -10,16 +10,19 @@ function styleFor(selector) {
   return rule.style;
 }
 
-test("начало связи — дуга с крестиком и градиентом красный -> зелёный", () => {
+test("начало связи — дуга с крестиком у начального полюса и градиентом красный -> зелёный к связи", () => {
   const style = styleFor('edge[role = "start"]');
 
   assert.equal(style["curve-style"], "unbundled-bezier");
   assert.ok(style["control-point-distances"] < 0);
-  assert.equal(style["source-label"], "×");
+  assert.equal(style["target-label"], "×");
+  assert.equal(style["source-label"], undefined);
   assert.equal(style["source-arrow-shape"], "none");
   assert.equal(style["target-arrow-shape"], "none");
   assert.equal(style["line-fill"], "linear-gradient");
-  assert.equal(style["line-gradient-stop-colors"], "#ff657a #67e8b3");
+  // Ребро Cytoscape хранится link -> start, поэтому визуальный смысл start -> link
+  // требует обратного порядка stop-цветов: зелёный у связи, красный у начального полюса.
+  assert.equal(style["line-gradient-stop-colors"], "#67e8b3 #ff657a");
   assert.equal(style["line-gradient-stop-positions"], "0% 100%");
 });
 
