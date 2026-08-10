@@ -1,0 +1,19 @@
+[
+  {"id":"q-empty","title":"пустое четверичное ачисло","format":"anum4","source":"","algorithm":"stack-group-value-v0"},
+  {"id":"q-root-empty-group","title":"[] — пустой вложенный контекст","format":"anum4","source":"[]","algorithm":"stack-group-value-v0"},
+  {"id":"q-one","title":"[1]","format":"anum4","source":"[1]","algorithm":"stack-group-value-v0"},
+  {"id":"q-zero","title":"[0]","format":"anum4","source":"[0]","algorithm":"stack-group-value-v0"},
+  {"id":"q-10","title":"[10]","format":"anum4","source":"[10]","algorithm":"stack-group-value-v0"},
+  {"id":"q-nested-10","title":"[[10]] — сравнение глубины","format":"anum4","source":"[[10]]","algorithm":"stack-group-value-v0"},
+  {"id":"q-prefix-group","title":"10[10] — значение группы в последовательности","format":"anum4","source":"10[10]","algorithm":"stack-group-value-v0"},
+  {"id":"q-nested-suffix","title":"[[10]]10 — вложенный результат + хвост","format":"anum4","source":"[[10]]10","algorithm":"stack-root-wrap-v0"},
+  {"id":"q-neighbor-groups","title":"[10][01] — соседние контексты","format":"anum4","source":"[10][01]","algorithm":"stack-group-value-v0"},
+  {"id":"s-a","title":"строка a","format":"anums","source":"a","algorithm":"string-flat-v0"},
+  {"id":"s-abc","title":"строка abc: carrier != denotation","format":"anums","source":"abc","algorithm":"string-flat-v0"},
+  {"id":"s-window","title":"исторический window/position/int","format":"anums","source":"window(position)(x)(10)(int)","algorithm":"string-flat-v0"},
+  {"id":"s-boolean","title":"исторический boolean(true)","format":"anums","source":"boolean(true)","algorithm":"string-flat-v0"},
+  {"id":"s-null","title":"исторический null","format":"anums","source":"null","algorithm":"string-flat-v0"},
+  {"id":"s-cyrillic","title":"UTF-8 кириллица","format":"anums","source":"ачисло","algorithm":"string-flat-v0"},
+  {"id":"s-emoji","title":"Unicode scalar emoji","format":"anums","source":"🙂","algorithm":"string-flat-v0"},
+  {"id":"s-no-normalization-nfd","title":"Unicode без скрытой нормализации","format":"anums","source":"е́","algorithm":"string-flat-v0"}
+]
