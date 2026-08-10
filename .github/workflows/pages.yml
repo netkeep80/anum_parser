@@ -28,7 +28,7 @@ jobs:
           mkdir _site
           cp index.html styles.css _site/
           cp -R src examples docs _site/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - name: Опубликовать
