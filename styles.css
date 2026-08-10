@@ -30,7 +30,7 @@ button, select, textarea, input { font: inherit; }
 .eyebrow { margin: 0; color: var(--b) !important; font-size: .72rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 main { display: grid; gap: 15px; padding-bottom: 28px; }
 .panel { padding: 17px; background: var(--panel); border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 18px 45px #0003; }
-.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; position: sticky; top: 7px; z-index: 5; }
+.controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
 .field { display: grid; gap: 5px; }
 .field.wide, .status { grid-column: 1 / -1; }
 label { color: var(--muted); font-size: .83rem; font-weight: 700; }
@@ -125,7 +125,7 @@ footer > span:first-child { margin-right: auto; }
 .app-version { padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); font: .75rem ui-monospace, monospace; }
 @media (max-width: 900px) {
   .hero { display: grid; }
-  .controls, .representation-grid { grid-template-columns: 1fr 1fr; position: static; }
+  .controls, .representation-grid { grid-template-columns: 1fr 1fr; }
   .graph-heading, .graph-meta { align-items: stretch; flex-direction: column; }
   .graph-toolbar { justify-content: start; }
   #graph { height: 600px; min-height: 480px; }
