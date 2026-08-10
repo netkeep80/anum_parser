@@ -1,0 +1,36 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v6
+      - name: Собрать статический сайт
+        run: |
+          mkdir _site
+          cp index.html styles.css _site/
+          cp -R src examples docs _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Опубликовать
+        id: deployment
+        uses: actions/deploy-pages@v5
