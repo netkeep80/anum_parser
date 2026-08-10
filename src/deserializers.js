@@ -1,4 +1,4 @@
-import { AsetBuilder } from "./model.js";
+import { ABIT_REFS, AsetBuilder } from "./model.js";
 import { ABIT_PROFILE } from "./formats.js";
 
 export const DESERIALIZERS = [
@@ -7,7 +7,7 @@ export const DESERIALIZERS = [
     title: "Строка: левая свёртка",
     status: "experimental",
     inputKinds: ["string"],
-    description: "Unicode-символы становятся exact occurrences; carrier и денотат строятся раздельно.",
+    description: "Unicode-символы разрешаются в канонические связи; carrier и денотат строятся раздельно.",
     deserialize: deserializeStringFlat,
   },
   {
@@ -15,7 +15,7 @@ export const DESERIALIZERS = [
     title: "Абиты: плоская левая свёртка",
     status: "experimental",
     inputKinds: ["quaternary"],
-    description: "Baseline: [ ] 1 0 считаются четырьмя значениями без стековой семантики.",
+    description: "Baseline: [ ] 1 0 считаются четырьмя корневыми связями без стековой семантики.",
     deserialize: deserializeAbitFlat,
   },
   {
@@ -23,7 +23,7 @@ export const DESERIALIZERS = [
     title: "Стек: группа возвращает значение",
     status: "experimental",
     inputKinds: ["quaternary"],
-    description: "[ открывает frame от ∞, ] передаёт внутренний результат родителю как одно значение.",
+    description: "[ открывает контекст от ∞, ] передаёт внутренний результат родителю как одно значение.",
     deserialize: (artifact, options) => deserializeStack(artifact, { ...options, closeStrategy: "group-value" }),
   },
   {
@@ -31,7 +31,7 @@ export const DESERIALIZERS = [
     title: "Стек: непустая группа возвращает ∞⟼value",
     status: "experimental",
     inputKinds: ["quaternary"],
-    description: "Как stack-group-value, но CLOSE непустой группы добавляет одну root-carrier связь.",
+    description: "Как stack-group-value, но CLOSE непустой группы получает связь ∞⟼value по обычному правилу МТС.",
     deserialize: (artifact, options) => deserializeStack(artifact, { ...options, closeStrategy: "root-wrap" }),
   },
 ];
@@ -51,7 +51,7 @@ function deserializeStringFlat(artifact, options = {}) {
   const builder = sourceBuilder(artifact);
   const trace = [];
   const refs = artifact.symbols.map((symbol, index) => {
-    const ref = builder.occurrence(symbol, "symbol-occurrence");
+    const ref = builder.symbolValue(symbol);
     trace.push(step(index, symbol, "resolve-symbol", 0, ref, [ref], [], `UTF-8 символ ${JSON.stringify(symbol)} -> ${ref}`));
     return ref;
   });
@@ -78,7 +78,7 @@ function deserializeAbitFlat(artifact, options = {}) {
   const trace = refs.map((ref, index) =>
     step(index, artifact.symbols[index], "resolve-abit", 0, ref, [ref], [], `${artifact.symbols[index]} -> ${ref}`),
   );
-  const physicalLinks = builder.addLinkSequence(refs, { role: "physical-abit-occurrences" });
+  const physicalLinks = builder.addLinkSequence(refs, { role: "physical-abit-values" });
   const carrier = builder.rootChain(refs, { sourceSequence: physicalLinks });
   const folded = builder.leftFold(refs, { labelPrefix: "abit-flat-fold" });
   trace.push(step(trace.length, "", "finish", 0, folded.result, refs, folded.created, "Плоская свёртка всех абитов"));
@@ -98,7 +98,7 @@ function deserializeAbitFlat(artifact, options = {}) {
 function deserializeStack(artifact, options = {}) {
   assertKind(artifact, "quaternary");
   const { builder, refs, sourceSequence, abitSequence } = prepareAbits(artifact);
-  const physicalLinks = builder.addLinkSequence(refs, { role: "physical-abit-occurrences" });
+  const physicalLinks = builder.addLinkSequence(refs, { role: "physical-abit-values" });
   const carrier = builder.rootChain(refs, { sourceSequence: physicalLinks });
   const trace = [];
   const frames = [newFrame(null)];
@@ -108,7 +108,7 @@ function deserializeStack(artifact, options = {}) {
     const ref = refs[index];
     if (token === "[") {
       frames.push(newFrame(index));
-      trace.push(snapshot(index, token, "open", frames, [], "Сохранить внешний frame; новый current = ∞"));
+      trace.push(snapshot(index, token, "open", frames, [], "Сохранить внешний контекст; новый current = ∞"));
       continue;
     }
     if (token === "]") {
@@ -119,18 +119,19 @@ function deserializeStack(artifact, options = {}) {
       let returned = inner.started ? inner.current : "R";
       const produced = [];
       if (options.closeStrategy === "root-wrap" && inner.started) {
-        returned = builder.link("R", returned, {
+        const ensured = builder.ensureLink("R", returned, {
           label: `close-wrap:${index}`,
           tags: ["experimental-close-wrap"],
         });
-        produced.push(returned);
+        returned = ensured.ref;
+        if (ensured.created) produced.push(returned);
       }
       appendValue(builder, frames.at(-1), returned, produced, `close:${index}`);
       trace.push(snapshot(index, token, `close:${options.closeStrategy}`, frames, produced, `Группа вернула ${returned}`));
       continue;
     }
     appendValue(builder, frames.at(-1), ref, [], `value:${index}`);
-    trace.push(snapshot(index, token, "value", frames, [], `Добавить exact абит ${ref} в текущий frame`));
+    trace.push(snapshot(index, token, "value", frames, [], `Добавить связь-абит ${ref} в текущий контекст`));
   }
 
   if (frames.length !== 1) {
@@ -141,7 +142,7 @@ function deserializeStack(artifact, options = {}) {
   const rootFrame = frames[0];
   const result = rootFrame.started ? rootFrame.current : "R";
   const resultSequence = builder.addLinkSequence(rootFrame.values, { role: "top-level-values" });
-  trace.push(snapshot(trace.length, "", "finish", frames, [], `Результат верхнего frame: ${result}`));
+  trace.push(snapshot(trace.length, "", "finish", frames, [], `Результат верхнего контекста: ${result}`));
   finish(builder, artifact, {
     algorithm: options.closeStrategy === "root-wrap" ? "stack-root-wrap-v0" : "stack-group-value-v0",
     sourceSequence,
@@ -161,7 +162,7 @@ function prepareAbits(artifact) {
   const sourceSequence = builder.addSymbolSequence(artifact.data, artifact.symbols, {
     kind: "ascii-abit-source",
   });
-  const refs = artifact.symbols.map((symbol) => builder.occurrence(symbol, "abit-occurrence"));
+  const refs = artifact.symbols.map((symbol) => ABIT_REFS[symbol]);
   const abitSequence = builder.addAbitSequence(artifact.symbols, refs, { profile: ABIT_PROFILE });
   return { builder, refs, sourceSequence, abitSequence };
 }
@@ -188,11 +189,12 @@ function appendValue(builder, frame, value, produced, label) {
     frame.started = true;
     return;
   }
-  frame.current = builder.link(frame.current, value, {
+  const ensured = builder.ensureLink(frame.current, value, {
     label,
     tags: ["sequence-fold-step"],
   });
-  produced.push(frame.current);
+  frame.current = ensured.ref;
+  if (ensured.created) produced.push(frame.current);
 }
 
 function snapshot(index, token, operation, frames, producedLinks, note) {
@@ -226,7 +228,7 @@ function finish(builder, artifact, data) {
   builder.setProvenance({
     status: "experimental",
     deserializer: data.algorithm,
-    traceVersion: "0.1",
+    traceVersion: "0.2",
     representations: {
       sourceSequence: data.sourceSequence,
       ...(data.abitSequence ? { abitSequence: data.abitSequence } : {}),
