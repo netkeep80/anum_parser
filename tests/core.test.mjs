@@ -9,7 +9,7 @@ import {
   serializeArtifact,
 } from "../src/formats.js";
 import { deserializerById } from "../src/deserializers.js";
-import { linkMap, validateAset } from "../src/model.js";
+import { AsetBuilder, linkMap, validateAset } from "../src/model.js";
 import {
   availableSerializers,
   serializerById,
@@ -46,6 +46,34 @@ test(".anums не нормализует Unicode", () => {
   assert.notEqual(nfc.data, nfd.data);
 });
 
+test("корневой базис R O C L U имеет канонические формы", () => {
+  const aset = new AsetBuilder().finish();
+  const links = linkMap(aset);
+  assert.deepEqual([links.get("R").start, links.get("R").end], ["R", "R"]);
+  assert.deepEqual([links.get("O").start, links.get("O").end], ["O", "R"]);
+  assert.deepEqual([links.get("C").start, links.get("C").end], ["R", "C"]);
+  assert.deepEqual([links.get("L").start, links.get("L").end], ["O", "C"]);
+  assert.deepEqual([links.get("U").start, links.get("U").end], ["C", "O"]);
+  assert.deepEqual(validateAset(aset), []);
+});
+
+test("связь определяется началом и концом", () => {
+  const builder = new AsetBuilder();
+  const first = builder.link("L", "U");
+  const second = builder.link("L", "U");
+  assert.equal(first, second);
+  const aset = builder.finish();
+  assert.equal(aset.links.filter((link) => link.start === "L" && link.end === "U").length, 1);
+  assert.deepEqual(validateAset(aset), []);
+});
+
+test("валидатор отвергает две записи одной формы", () => {
+  const aset = new AsetBuilder().finish();
+  aset.links.push({ id: "DUP", start: "R", end: "R" });
+  const errors = validateAset(aset);
+  assert.ok(errors.some((error) => error.includes("duplicate link form R -> R")));
+});
+
 test("строка abc различает symbol sequence, link sequence, carrier и denotation", () => {
   const result = deserializerById("string-flat-v0").deserialize(parseAnums("abc"));
   const { aset } = result;
@@ -58,36 +86,39 @@ test("строка abc различает symbol sequence, link sequence, carrie
   assert.deepEqual(validateAset(aset), []);
 });
 
-test("symbol occurrences exact-различны даже при одинаковых полюсах", () => {
-  const { aset } = deserializerById("string-flat-v0").deserialize(parseAnums("aa"));
+test("одинаковые строковые символы разрешаются в одну связь", () => {
+  const { aset } = deserializerById("string-flat-v0").deserialize(parseAnums("aba"));
   const refs = aset.linkSequences[0].items;
-  const links = linkMap(aset);
+  assert.equal(refs[0], refs[2]);
   assert.notEqual(refs[0], refs[1]);
-  assert.deepEqual(
-    [links.get(refs[0]).start, links.get(refs[0]).end],
-    [links.get(refs[1]).start, links.get(refs[1]).end],
-  );
 });
 
-test("пустой ввод stack-group-value возвращает distinguished root", () => {
+test("повтор одного абита повторяет ссылку, а не создаёт экземпляры", () => {
+  const result = run("abit-flat-v0", "1110");
+  assert.deepEqual(result.aset.abitSequences[0].refs, ["L", "L", "L", "U"]);
+  assert.deepEqual(validateAset(result.aset), []);
+});
+
+test("пустой ввод stack-group-value возвращает акорень", () => {
   const result = run("stack-group-value-v0", "");
   assert.equal(result.result, "R");
   assert.equal(result.carrier, "R");
 });
 
-test("[] возвращает root в stack-group-value-v0", () => {
+test("[] возвращает акорень", () => {
   const result = run("stack-group-value-v0", "[]");
   assert.equal(result.result, "R");
-  assert.notEqual(result.carrier, "R", "физический carrier [] всё равно содержит два абита");
-  assert.equal(result.aset.abitSequences[0].symbols.join(""), "[]");
+  assert.notEqual(result.carrier, "R", "физический carrier [] содержит O и C");
+  assert.deepEqual(result.aset.abitSequences[0].refs, ["O", "C"]);
 });
 
-test("[][] создаёт новый root-shaped result, но не подменяет distinguished root", () => {
+test("[][] схлопывается в акорень по R = R⟼R", () => {
   const result = run("stack-group-value-v0", "[][]");
-  const link = linkMap(result.aset).get(result.result);
-  assert.notEqual(result.result, "R");
-  assert.equal(link.start, "R");
-  assert.equal(link.end, "R");
+  assert.equal(result.result, "R");
+  assert.equal(
+    result.aset.links.filter((link) => link.start === "R" && link.end === "R").length,
+    1,
+  );
 });
 
 test("[10] строит denotation 1⟼0 без root как операнда непустого body", () => {
@@ -96,6 +127,8 @@ test("[10] строит denotation 1⟼0 без root как операнда н�
   const refs = result.aset.abitSequences[0].refs;
   const one = refs[1];
   const zero = refs[2];
+  assert.equal(one, "L");
+  assert.equal(zero, "U");
   const denotation = links.get(result.result);
   assert.equal(denotation.start, one);
   assert.equal(denotation.end, zero);
@@ -125,17 +158,16 @@ test("незакрытый контекст диагностируется", () 
   );
 });
 
-test("storage-link является отдельной exact связью", () => {
+test("роль связи-хранилища не создаёт вторую identity той же формы", () => {
   const result = deserializerById("string-flat-v0").deserialize(parseAnums("abc"), {
     createStorageLink: true,
   });
   const stored = result.aset.storedAnums[0];
   assert.ok(stored);
-  assert.notEqual(stored.storageLink, stored.carrier);
-  assert.notEqual(stored.storageLink, stored.denotation);
   const link = linkMap(result.aset).get(stored.storageLink);
   assert.equal(link.start, stored.carrier);
   assert.equal(link.end, stored.denotation);
+  assert.deepEqual(validateAset(result.aset), []);
 });
 
 test("legacy serializeArtifact source replay остаётся точным", () => {
@@ -168,13 +200,14 @@ test("source-envelope-v0 round-trip сохраняет физический sour
   assert.equal(restored.data, "[10][01]");
 });
 
-test("aset-json-v0 сохраняет exact ids и полюса", () => {
+test("aset-json-v0 сохраняет канонические ids и полюса", () => {
   const result = run("stack-group-value-v0", "[][]", true);
   const output = serializerById("aset-json-v0").serialize(result.aset);
   const restored = JSON.parse(output.text);
 
   assert.equal(output.filename, "experiment.aset.json");
   assert.deepEqual(restored.links, result.aset.links);
+  assert.equal(restored.identity, "by-poles");
   assert.equal(restored.root, result.aset.root);
   assert.deepEqual(validateAset(restored), []);
 });
@@ -194,32 +227,21 @@ test("Aset без provenance.source не притворяется обратим
   );
 });
 
-test("визуальная проекция сохраняет exact-связи и обе роли полюсов", () => {
-  const aset = {
-    root: "R",
-    labels: { R: "∞", L1: "x", L2: "x" },
-    links: [
-      { id: "R", start: "R", end: "R" },
-      { id: "L1", start: "R", end: "R" },
-      { id: "L2", start: "R", end: "R" },
-    ],
-  };
+test("визуальная проекция сохраняет все канонические связи и обе роли полюсов", () => {
+  const aset = run("stack-group-value-v0", "[10]").aset;
   const elements = asetToGraphElements(aset);
   const nodes = elements.filter((item) => item.data.source === undefined);
   const edges = elements.filter((item) => item.data.source !== undefined);
 
-  assert.deepEqual(nodes.map((item) => item.data.id), ["R", "L1", "L2"]);
+  assert.equal(nodes.length, aset.links.length);
+  assert.equal(edges.length, aset.links.length * 2);
   assert.equal(nodes.find((item) => item.data.id === "R").data.root, "yes");
-  assert.equal(edges.length, 6);
-  assert.deepEqual(
-    edges.filter((item) => item.data.source === "L1").map((item) => item.data.role),
-    ["start", "end"],
-  );
-  assert.deepEqual(
-    edges.filter((item) => item.data.source === "L2").map((item) => item.data.role),
-    ["start", "end"],
-  );
-  assert.notEqual(nodes[1].data.id, nodes[2].data.id);
+  for (const link of aset.links) {
+    assert.deepEqual(
+      edges.filter((item) => item.data.source === link.id).map((item) => item.data.role),
+      ["start", "end"],
+    );
+  }
 });
 
 for (const item of corpus) {
