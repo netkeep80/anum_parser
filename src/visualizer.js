@@ -86,6 +86,34 @@ export function renderAset(container, aset, options = {}) {
   const resizeObserver = new ResizeObserver(() => cy.resize());
   resizeObserver.observe(container);
   graphStates.set(container, { cy, resizeObserver, aset });
+  if (options.debug) setGraphDebugState(container, options.debug);
+}
+
+export function setGraphDebugState(container, debug = null) {
+  const state = graphStates.get(container);
+  if (!state) return;
+  const { cy } = state;
+  const visible = debug?.visibleLinkIds ? new Set(debug.visibleLinkIds) : null;
+  const produced = new Set(debug?.producedLinks ?? []);
+  const reused = new Set(debug?.reusedLinks ?? []);
+
+  cy.batch(() => {
+    cy.elements().removeClass("debug-current debug-added debug-reused");
+    cy.nodes().forEach((node) => {
+      const shown = visible === null || visible.has(node.id());
+      node.style("display", shown ? "element" : "none");
+      if (!shown) return;
+      if (node.id() === debug?.current) node.addClass("debug-current");
+      if (produced.has(node.id())) node.addClass("debug-added");
+      if (reused.has(node.id())) node.addClass("debug-reused");
+    });
+    cy.edges().forEach((edge) => {
+      const shown = edge.source().style("display") !== "none" && edge.target().style("display") !== "none";
+      edge.style("display", shown ? "element" : "none");
+    });
+    for (const id of produced) cy.getElementById(id).connectedEdges().addClass("debug-added");
+    for (const id of reused) cy.getElementById(id).connectedEdges().addClass("debug-reused");
+  });
 }
 
 export function changeGraphLayout(container, layoutId) {
@@ -201,10 +229,33 @@ export function graphStyle() {
       },
     },
     {
-      selector: "node:selected",
+      selector: "node.debug-current",
       style: {
         "border-color": "#ffd47a",
-        "border-width": 4,
+        "border-width": 5,
+      },
+    },
+    {
+      selector: "node.debug-added",
+      style: {
+        "background-color": "#185c48",
+        "border-color": "#67e8b3",
+        "border-width": 5,
+      },
+    },
+    {
+      selector: "node.debug-reused",
+      style: {
+        "border-color": "#67d5ff",
+        "border-width": 5,
+        "border-style": "dashed",
+      },
+    },
+    {
+      selector: "node:selected",
+      style: {
+        "border-width": 5,
+        "border-color": "#ffb86b",
       },
     },
     {
@@ -270,9 +321,24 @@ export function graphStyle() {
       },
     },
     {
+      selector: "edge.debug-added",
+      style: {
+        width: 4,
+        opacity: 1,
+      },
+    },
+    {
+      selector: "edge.debug-reused",
+      style: {
+        width: 3,
+        "line-style": "dotted",
+        opacity: 1,
+      },
+    },
+    {
       selector: "edge:selected",
       style: {
-        width: 3.5,
+        width: 4,
         color: "#eef3ff",
       },
     },
