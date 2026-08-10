@@ -38,6 +38,7 @@ export function asetToGraphElements(aset, limit = 300) {
           id: `pole-start:${link.id}`,
           source: link.id,
           target: link.start,
+          linkId: link.id,
           role: "start",
           label: "начало",
         },
@@ -49,6 +50,7 @@ export function asetToGraphElements(aset, limit = 300) {
           id: `pole-end:${link.id}`,
           source: link.id,
           target: link.end,
+          linkId: link.id,
           role: "end",
           label: "конец",
         },
@@ -123,6 +125,36 @@ export function zoomGraph(container, factor) {
   cy.zoom({
     level: next,
     renderedPosition: { x: container.clientWidth / 2, y: container.clientHeight / 2 },
+  });
+}
+
+export function setGraphDebugState(container, debugState) {
+  const state = graphStates.get(container);
+  if (!state) return;
+
+  const { cy, aset } = state;
+  const visible = debugState
+    ? new Set(debugState.visibleLinkIds ?? [])
+    : new Set(aset.links.map((link) => link.id));
+  const produced = new Set(debugState?.producedLinks ?? []);
+  const reused = new Set(debugState?.reusedLinks ?? []);
+  const current = debugState?.current ?? null;
+
+  cy.batch(() => {
+    cy.nodes().forEach((node) => {
+      const linkId = node.data("linkId");
+      node.toggleClass("debug-hidden", !visible.has(linkId));
+      node.toggleClass("debug-produced", produced.has(linkId));
+      node.toggleClass("debug-reused", reused.has(linkId));
+      node.toggleClass("debug-current", linkId === current);
+    });
+
+    cy.edges().forEach((edge) => {
+      const linkId = edge.data("linkId");
+      edge.toggleClass("debug-hidden", !visible.has(linkId));
+      edge.toggleClass("debug-produced", produced.has(linkId));
+      edge.toggleClass("debug-reused", reused.has(linkId));
+    });
   });
 }
 
@@ -284,6 +316,57 @@ export function graphStyle() {
         "target-arrow-shape": "triangle",
         "target-arrow-color": "#ff657a",
         "target-arrow-fill": "filled",
+      },
+    },
+    {
+      selector: "node.debug-hidden",
+      style: { display: "none" },
+    },
+    {
+      selector: "edge.debug-hidden",
+      style: { display: "none" },
+    },
+    {
+      selector: "node.debug-produced",
+      style: {
+        "background-color": "#174238",
+        "border-color": "#67e8b3",
+        "border-width": 4,
+      },
+    },
+    {
+      selector: "edge.debug-produced",
+      style: {
+        "line-fill": "solid",
+        "line-color": "#67e8b3",
+        "target-arrow-color": "#67e8b3",
+        width: 4,
+      },
+    },
+    {
+      selector: "node.debug-reused",
+      style: {
+        "border-color": "#6bdcff",
+        "border-style": "dashed",
+        "border-width": 4,
+      },
+    },
+    {
+      selector: "edge.debug-reused",
+      style: {
+        "line-fill": "solid",
+        "line-color": "#6bdcff",
+        "target-arrow-color": "#6bdcff",
+        "line-style": "dashed",
+        width: 4,
+      },
+    },
+    {
+      selector: "node.debug-current",
+      style: {
+        "border-color": "#ffd47a",
+        "border-style": "solid",
+        "border-width": 5,
       },
     },
     {
