@@ -103,7 +103,10 @@ export function zoomGraph(container, factor) {
   const cy = graphStates.get(container)?.cy;
   if (!cy) return;
   const next = Math.max(cy.minZoom(), Math.min(cy.maxZoom(), cy.zoom() * factor));
-  cy.zoom({ level: next, renderedPosition: renderedCenter(cy) });
+  cy.zoom({
+    level: next,
+    renderedPosition: { x: container.clientWidth / 2, y: container.clientHeight / 2 },
+  });
 }
 
 export function destroyGraph(container) {
@@ -245,13 +248,4 @@ function graphStyle() {
       },
     },
   ];
-}
-
-function renderedCenter(cy) {
-  const extent = cy.extent();
-  const modelCenter = {
-    x: (extent.x1 + extent.x2) / 2,
-    y: (extent.y1 + extent.y2) / 2,
-  };
-  return cy.modelToRenderedPosition(modelCenter);
 }
