@@ -1,14 +1,20 @@
 import { detectFormat, downloadText, parseArtifact, readUtf8File } from "./formats.js";
 import { availableDeserializers, deserializerById } from "./deserializers.js";
 import { availableSerializers, serializerById } from "./serializers.js";
-import { renderAset } from "./visualizer.js";
+import {
+  GRAPH_LAYOUTS,
+  changeGraphLayout,
+  fitGraph,
+  renderAset,
+  zoomGraph,
+} from "./visualizer.js";
 
 const state = { cases: [], result: null, comparison: null };
 const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
   "run", "load", "file", "serializer", "save", "status", "summary", "symbols",
   "abits", "linkSequence", "rootChains", "storedAnums", "trace", "comparison",
-  "asetJson", "graph",
+  "asetJson", "graph", "graphLayout", "graphFit", "graphZoomIn", "graphZoomOut",
 ];
 const ui = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
@@ -22,6 +28,8 @@ async function boot() {
     option("anum-json", ".anum.json — контейнер"),
     option("aset", ".aset.json — асеть"),
   );
+  ui.graphLayout.replaceChildren(...GRAPH_LAYOUTS.map((layout) => option(layout.id, layout.title)));
+  ui.graphLayout.value = "cose";
   ui.sample.replaceChildren(...state.cases.map((c, i) => option(String(i), `${c.id} — ${c.title}`)));
   ui.sample.addEventListener("change", selectSample);
   ui.inputFormat.addEventListener("change", refreshAlgorithms);
@@ -29,6 +37,10 @@ async function boot() {
   ui.load.addEventListener("click", () => ui.file.click());
   ui.file.addEventListener("change", loadFile);
   ui.save.addEventListener("click", saveOutput);
+  ui.graphLayout.addEventListener("change", () => changeGraphLayout(ui.graph, ui.graphLayout.value));
+  ui.graphFit.addEventListener("click", () => fitGraph(ui.graph));
+  ui.graphZoomIn.addEventListener("click", () => zoomGraph(ui.graph, 1.28));
+  ui.graphZoomOut.addEventListener("click", () => zoomGraph(ui.graph, 1 / 1.28));
   selectSample();
   run();
 }
@@ -110,7 +122,7 @@ function render() {
   ui.asetJson.textContent = JSON.stringify(aset, null, 2);
   renderTrace(trace);
   renderComparison();
-  renderAset(ui.graph, aset);
+  renderAset(ui.graph, aset, { layout: ui.graphLayout.value });
   refreshSerializers();
 }
 
