@@ -107,6 +107,7 @@ function render() {
   const source = aset.provenance?.source;
   ui.summary.replaceChildren(
     metric("Формат", `${aset.format}/${aset.version}`),
+    metric("Тождество", aset.identity ?? "—"),
     metric("Алгоритм", aset.provenance?.deserializer ?? "—"),
     metric("Связей", aset.links.length),
     metric("Акорень", aset.root),
@@ -152,8 +153,8 @@ function renderComparison() {
     `   result(local) = ${b.result}`,
     `   links = ${b.aset.links.length}`,
     "",
-    "Локальные id независимых асетей не являются общей exact-идентичностью.",
-    "Сравнивайте топологию, трассу и экспорт, а не совпадение строковых id.",
+    "Связь МТС определяется парой (начало, конец).",
+    "Технические id двух независимо построенных файлов сравнивать напрямую нельзя: сравнивайте каноническую топологию пар, трассу и результат.",
   ].join("\n");
 }
 
