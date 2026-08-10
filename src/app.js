@@ -14,14 +14,19 @@ const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
   "run", "load", "file", "serializer", "save", "status", "summary", "symbols",
   "abits", "linkSequence", "rootChains", "storedAnums", "trace", "comparison",
-  "asetJson", "graph", "graphLayout", "graphFit", "graphZoomIn", "graphZoomOut",
+  "asetJson", "graph", "graphLayout", "graphFit", "graphZoomIn", "graphZoomOut", "appVersion",
 ];
 const ui = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
 boot().catch(showError);
 
 async function boot() {
-  state.cases = await fetch("./examples/cases.json").then((r) => r.json());
+  const [cases, version] = await Promise.all([
+    fetch("./examples/cases.json").then((r) => r.json()),
+    loadVersion(),
+  ]);
+  state.cases = cases;
+  renderVersion(version);
   ui.inputFormat.replaceChildren(
     option("anum4", ".anum4 — четверичное"),
     option("anums", ".anums — строковое"),
@@ -43,6 +48,23 @@ async function boot() {
   ui.graphZoomOut.addEventListener("click", () => zoomGraph(ui.graph, 1 / 1.28));
   selectSample();
   run();
+}
+
+async function loadVersion() {
+  try {
+    const response = await fetch("./package.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const metadata = await response.json();
+    return typeof metadata.version === "string" ? metadata.version : null;
+  } catch (error) {
+    console.warn("Не удалось прочитать версию приложения из package.json", error);
+    return null;
+  }
+}
+
+function renderVersion(version) {
+  ui.appVersion.textContent = version ? `v${version}` : "версия ?";
+  if (version) document.title = `anum_parser v${version} — лаборатория ачисел`;
 }
 
 function selectSample() {

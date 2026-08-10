@@ -167,7 +167,7 @@ function layoutOptions(layoutId) {
   }
 }
 
-function graphStyle() {
+export function graphStyle() {
   return [
     {
       selector: "node",
@@ -210,10 +210,11 @@ function graphStyle() {
     {
       selector: "edge",
       style: {
-        width: 1.6,
-        "curve-style": "bezier",
-        "target-arrow-shape": "triangle",
-        "arrow-scale": 0.8,
+        width: 2,
+        "curve-style": "unbundled-bezier",
+        "source-arrow-shape": "none",
+        "target-arrow-shape": "none",
+        "arrow-scale": 0.92,
         label: "data(label)",
         "font-family": "Inter, system-ui, sans-serif",
         "font-size": "8px",
@@ -222,22 +223,50 @@ function graphStyle() {
         "text-background-opacity": 0.82,
         "text-background-padding": "2px",
         "text-rotation": "autorotate",
+        "line-cap": "round",
       },
     },
     {
       selector: 'edge[role = "start"]',
       style: {
-        "line-color": "#73a7ff",
-        "target-arrow-color": "#73a7ff",
-        "line-style": "dashed",
+        label: "",
+        "curve-style": "unbundled-bezier",
+        "control-point-distances": -34,
+        "control-point-weights": 0.5,
+        "loop-direction": "-70deg",
+        "loop-sweep": "-65deg",
+        "line-fill": "linear-gradient",
+        "line-gradient-stop-colors": "#ff657a #67e8b3",
+        "line-gradient-stop-positions": "0% 100%",
+        "line-color": "#67e8b3",
+        "source-arrow-shape": "none",
+        "target-arrow-shape": "none",
+        "source-label": "×",
+        "source-text-offset": 8,
+        "source-text-rotation": "none",
+        "font-size": "16px",
+        "font-weight": "bold",
+        color: "#ff657a",
+        "text-background-opacity": 0,
       },
     },
     {
       selector: 'edge[role = "end"]',
       style: {
+        label: "",
+        "curve-style": "unbundled-bezier",
+        "control-point-distances": 34,
+        "control-point-weights": 0.5,
+        "loop-direction": "70deg",
+        "loop-sweep": "65deg",
+        "line-fill": "linear-gradient",
+        "line-gradient-stop-colors": "#67e8b3 #73a7ff",
+        "line-gradient-stop-positions": "0% 100%",
         "line-color": "#67e8b3",
-        "target-arrow-color": "#67e8b3",
-        "line-style": "solid",
+        "source-arrow-shape": "none",
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": "#73a7ff",
+        "target-arrow-fill": "filled",
       },
     },
     {
