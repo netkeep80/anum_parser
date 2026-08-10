@@ -14,6 +14,7 @@ import {
   availableSerializers,
   serializerById,
 } from "../src/serializers.js";
+import { asetToGraphElements } from "../src/visualizer.js";
 
 const corpus = JSON.parse(
   await readFile(new URL("../examples/cases.json", import.meta.url), "utf8"),
@@ -191,6 +192,34 @@ test("Aset без provenance.source не притворяется обратим
     () => serializerById("source-replay-v0").serialize(isolated),
     (error) => error.code === "unsupported-round-trip",
   );
+});
+
+test("визуальная проекция сохраняет exact-связи и обе роли полюсов", () => {
+  const aset = {
+    root: "R",
+    labels: { R: "∞", L1: "x", L2: "x" },
+    links: [
+      { id: "R", start: "R", end: "R" },
+      { id: "L1", start: "R", end: "R" },
+      { id: "L2", start: "R", end: "R" },
+    ],
+  };
+  const elements = asetToGraphElements(aset);
+  const nodes = elements.filter((item) => item.data.source === undefined);
+  const edges = elements.filter((item) => item.data.source !== undefined);
+
+  assert.deepEqual(nodes.map((item) => item.data.id), ["R", "L1", "L2"]);
+  assert.equal(nodes.find((item) => item.data.id === "R").data.root, "yes");
+  assert.equal(edges.length, 6);
+  assert.deepEqual(
+    edges.filter((item) => item.data.source === "L1").map((item) => item.data.role),
+    ["start", "end"],
+  );
+  assert.deepEqual(
+    edges.filter((item) => item.data.source === "L2").map((item) => item.data.role),
+    ["start", "end"],
+  );
+  assert.notEqual(nodes[1].data.id, nodes[2].data.id);
 });
 
 for (const item of corpus) {
