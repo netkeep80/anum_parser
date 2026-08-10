@@ -1,18 +1,12 @@
-import {
-  detectFormat,
-  downloadText,
-  INPUT_FORMATS,
-  parseArtifact,
-  readUtf8File,
-  serializeArtifact,
-} from "./formats.js";
+import { detectFormat, downloadText, parseArtifact, readUtf8File } from "./formats.js";
 import { availableDeserializers, deserializerById } from "./deserializers.js";
+import { availableSerializers, serializerById } from "./serializers.js";
 import { renderAset } from "./visualizer.js";
 
 const state = { cases: [], result: null, comparison: null };
 const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
-  "run", "load", "file", "outputFormat", "save", "status", "summary", "symbols",
+  "run", "load", "file", "serializer", "save", "status", "summary", "symbols",
   "abits", "linkSequence", "rootChains", "storedAnums", "trace", "comparison",
   "asetJson", "graph",
 ];
@@ -27,12 +21,6 @@ async function boot() {
     option("anums", ".anums — строковое"),
     option("anum-json", ".anum.json — контейнер"),
     option("aset", ".aset.json — асеть"),
-  );
-  ui.outputFormat.replaceChildren(
-    option("aset", ".aset.json — асеть"),
-    option("anum4", ".anum4 — восстановить источник"),
-    option("anums", ".anums — восстановить источник"),
-    option("anum-json", ".anum.json — контейнер"),
   );
   ui.sample.replaceChildren(...state.cases.map((c, i) => option(String(i), `${c.id} — ${c.title}`)));
   ui.sample.addEventListener("change", selectSample);
@@ -67,6 +55,14 @@ function refreshAlgorithms(preferred = null) {
   ui.algorithm.replaceChildren(...variants.map((v) => option(v.id, `${v.title} [${v.status}]`)));
   ui.compareAlgorithm.replaceChildren(option("none", "— без сравнения —"), ...variants.map((v) => option(v.id, `${v.title} [${v.status}]`)));
   if (preferred && variants.some((v) => v.id === preferred)) ui.algorithm.value = preferred;
+}
+
+function refreshSerializers() {
+  const previous = ui.serializer.value;
+  const variants = state.result ? availableSerializers(state.result.aset) : [];
+  ui.serializer.replaceChildren(...variants.map((v) => option(v.id, `${v.title} [${v.status}]`)));
+  if (variants.some((v) => v.id === previous)) ui.serializer.value = previous;
+  ui.save.disabled = variants.length === 0;
 }
 
 function run() {
@@ -115,6 +111,7 @@ function render() {
   renderTrace(trace);
   renderComparison();
   renderAset(ui.graph, aset);
+  refreshSerializers();
 }
 
 function renderTrace(trace) {
@@ -124,13 +121,7 @@ function renderTrace(trace) {
     return;
   }
   for (const item of trace) {
-    ui.trace.append(tableRow([
-      item.step,
-      item.token || "ε",
-      item.operation,
-      item.depth,
-      `${item.current} · ${item.note}`,
-    ]));
+    ui.trace.append(tableRow([item.step, item.token || "ε", item.operation, item.depth, `${item.current} · ${item.note}`]));
   }
 }
 
@@ -168,50 +159,17 @@ async function loadFile() {
 }
 
 function saveOutput() {
-  if (!state.result) return;
+  if (!state.result || !ui.serializer.value) return;
   try {
-    const format = ui.outputFormat.value;
-    const text = serializeArtifact(state.result.aset, format);
-    const key = format === "anum-json" ? "anumJson" : format;
-    const extension = INPUT_FORMATS[key]?.extension ?? ".txt";
-    const mime = format.includes("json") || format === "aset" ? "application/json;charset=utf-8" : "text/plain;charset=utf-8";
-    downloadText(`experiment${extension}`, text, mime);
+    const output = serializerById(ui.serializer.value).serialize(state.result.aset);
+    downloadText(output.filename, output.text, output.mime);
   } catch (error) { showError(error); }
 }
 
-function option(value, text) {
-  const node = document.createElement("option");
-  node.value = value;
-  node.textContent = text;
-  return node;
-}
-
-function metric(label, value) {
-  const node = document.createElement("div");
-  node.className = "metric";
-  const name = document.createElement("span");
-  const data = document.createElement("strong");
-  name.textContent = label;
-  data.textContent = String(value);
-  node.append(name, data);
-  return node;
-}
-
-function tableRow(values) {
-  const row = document.createElement("tr");
-  for (const value of values) {
-    const cell = document.createElement("td");
-    cell.textContent = String(value);
-    row.append(cell);
-  }
-  return row;
-}
-
+function option(value, text) { const n = document.createElement("option"); n.value = value; n.textContent = text; return n; }
+function metric(label, value) { const n = document.createElement("div"); n.className = "metric"; const a = document.createElement("span"); const b = document.createElement("strong"); a.textContent = label; b.textContent = String(value); n.append(a, b); return n; }
+function tableRow(values) { const r = document.createElement("tr"); for (const value of values) { const c = document.createElement("td"); c.textContent = String(value); r.append(c); } return r; }
 function pretty(value) { return JSON.stringify(value ?? [], null, 2); }
 function clearStatus() { ui.status.className = "status"; ui.status.textContent = ""; }
 function showStatus(text, kind) { ui.status.className = `status ${kind}`; ui.status.textContent = text; }
-function showError(error) {
-  console.error(error);
-  const detail = error?.detail ? ` ${JSON.stringify(error.detail)}` : "";
-  showStatus(`${error?.code ?? "error"}: ${error?.message ?? error}${detail}`, "error");
-}
+function showError(error) { console.error(error); const detail = error?.detail ? ` ${JSON.stringify(error.detail)}` : ""; showStatus(`${error?.code ?? "error"}: ${error?.message ?? error}${detail}`, "error"); }

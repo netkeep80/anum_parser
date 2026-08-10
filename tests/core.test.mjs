@@ -2,13 +2,32 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { parseAnum4, parseAnums, serializeArtifact } from "../src/formats.js";
+import {
+  parseAnum4,
+  parseAnumJson,
+  parseAnums,
+  serializeArtifact,
+} from "../src/formats.js";
 import { deserializerById } from "../src/deserializers.js";
 import { linkMap, validateAset } from "../src/model.js";
+import {
+  availableSerializers,
+  serializerById,
+} from "../src/serializers.js";
+
+const corpus = JSON.parse(
+  await readFile(new URL("../examples/cases.json", import.meta.url), "utf8"),
+);
 
 function run(id, source, createStorageLink = false) {
   const artifact = parseAnum4(source);
   return deserializerById(id).deserialize(artifact, { createStorageLink });
+}
+
+function parseCorpusSource(item) {
+  if (item.format === "anum4") return parseAnum4(item.source);
+  if (item.format === "anums") return parseAnums(item.source);
+  throw new Error(`unsupported corpus input format: ${item.format}`);
 }
 
 test(".anum4 хранит только четыре физических символа", () => {
@@ -62,6 +81,14 @@ test("[] возвращает root в stack-group-value-v0", () => {
   assert.equal(result.aset.abitSequences[0].symbols.join(""), "[]");
 });
 
+test("[][] создаёт новый root-shaped result, но не подменяет distinguished root", () => {
+  const result = run("stack-group-value-v0", "[][]");
+  const link = linkMap(result.aset).get(result.result);
+  assert.notEqual(result.result, "R");
+  assert.equal(link.start, "R");
+  assert.equal(link.end, "R");
+});
+
 test("[10] строит denotation 1⟼0 без root как операнда непустого body", () => {
   const result = run("stack-group-value-v0", "[10]");
   const links = linkMap(result.aset);
@@ -110,17 +137,81 @@ test("storage-link является отдельной exact связью", () =
   assert.equal(link.end, stored.denotation);
 });
 
-test("source replay возвращает raw исходник из aset provenance", () => {
+test("legacy serializeArtifact source replay остаётся точным", () => {
   const result = run("stack-group-value-v0", "[10]");
   assert.equal(serializeArtifact(result.aset, "anum4"), "[10]");
   assert.throws(() => serializeArtifact(result.aset, "anums"), /нет строкового исходника/);
 });
 
-test("весь UI corpus исполняется заявленными алгоритмами", async () => {
-  const cases = JSON.parse(await readFile(new URL("../examples/cases.json", import.meta.url), "utf8"));
-  for (const item of cases) {
-    const artifact = item.format === "anum4" ? parseAnum4(item.source) : parseAnums(item.source);
-    const result = deserializerById(item.algorithm).deserialize(artifact);
-    assert.deepEqual(validateAset(result.aset), [], item.id);
-  }
+test("serializer registry сохраняет точную строку и четверичный source", () => {
+  const q = run("stack-group-value-v0", "[[10]]10");
+  const s = deserializerById("string-flat-v0").deserialize(parseAnums("a🙂b\n"));
+
+  const qReplay = serializerById("source-replay-v0").serialize(q.aset);
+  const sReplay = serializerById("source-replay-v0").serialize(s.aset);
+
+  assert.equal(qReplay.filename, "experiment.anum4");
+  assert.equal(qReplay.text, "[[10]]10");
+  assert.equal(sReplay.filename, "experiment.anums");
+  assert.equal(sReplay.text, "a🙂b\n");
 });
+
+test("source-envelope-v0 round-trip сохраняет физический source", () => {
+  const result = run("stack-root-wrap-v0", "[10][01]");
+  const output = serializerById("source-envelope-v0").serialize(result.aset);
+  const restored = parseAnumJson(output.text);
+
+  assert.equal(output.filename, "experiment.anum.json");
+  assert.equal(restored.kind, "quaternary");
+  assert.equal(restored.profile, "mts-abit-v1");
+  assert.equal(restored.data, "[10][01]");
+});
+
+test("aset-json-v0 сохраняет exact ids и полюса", () => {
+  const result = run("stack-group-value-v0", "[][]", true);
+  const output = serializerById("aset-json-v0").serialize(result.aset);
+  const restored = JSON.parse(output.text);
+
+  assert.equal(output.filename, "experiment.aset.json");
+  assert.deepEqual(restored.links, result.aset.links);
+  assert.equal(restored.root, result.aset.root);
+  assert.deepEqual(validateAset(restored), []);
+});
+
+test("Aset без provenance.source не притворяется обратимо сериализуемой в Anum", () => {
+  const result = run("stack-group-value-v0", "[10]");
+  const isolated = structuredClone(result.aset);
+  delete isolated.provenance.source;
+
+  assert.deepEqual(
+    availableSerializers(isolated).map((item) => item.id),
+    ["aset-json-v0"],
+  );
+  assert.throws(
+    () => serializerById("source-replay-v0").serialize(isolated),
+    (error) => error.code === "unsupported-round-trip",
+  );
+});
+
+for (const item of corpus) {
+  test(`corpus: ${item.id}`, () => {
+    const execute = () => {
+      const artifact = parseCorpusSource(item);
+      return deserializerById(item.algorithm).deserialize(artifact);
+    };
+
+    if (item.expectError) {
+      assert.throws(
+        execute,
+        (error) => error.code === item.expectError,
+        `${item.id} должен завершаться ${item.expectError}`,
+      );
+      return;
+    }
+
+    const result = execute();
+    assert.deepEqual(validateAset(result.aset), [], item.id);
+    assert.equal(result.aset.provenance?.source?.raw, item.source, item.id);
+    assert.ok(result.aset.links.some((link) => link.id === result.result), item.id);
+  });
+}
