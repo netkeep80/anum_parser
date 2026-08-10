@@ -1,0 +1,54 @@
+{
+  "policy_format_version": "0.3.0",
+  "repository_kind": "tooling",
+  "enforcement": {
+    "mode": "blocking"
+  },
+  "paths": {
+    "forbidden": [
+      "legacy/**",
+      "archive/**",
+      "old/**",
+      "deprecated/**",
+      "*.bak",
+      "*.tmp",
+      "*.orig"
+    ],
+    "canonical_docs": [
+      "README.md"
+    ],
+    "governance_paths": [
+      "repo-policy.json",
+      ".github/workflows/repo-guard.yml",
+      ".github/PULL_REQUEST_TEMPLATE.md",
+      ".github/ISSUE_TEMPLATE/change-contract.yml"
+    ],
+    "operational_paths": []
+  },
+  "diff_rules": {
+    "max_new_docs": 3,
+    "max_new_files": 20,
+    "max_net_added_lines": 2500
+  },
+  "content_rules": [
+    {
+      "id": "readme-russian-first",
+      "glob": "README.md",
+      "mode": "markdown_language",
+      "language": "ru",
+      "allow_words": [
+        "API",
+        "ASCII",
+        "CI",
+        "CLI",
+        "Git",
+        "GitHub",
+        "JSON",
+        "Python",
+        "UTF"
+      ],
+      "max_unapproved_latin_words_per_line": 1
+    }
+  ],
+  "cochange_rules": []
+}

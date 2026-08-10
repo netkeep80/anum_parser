@@ -1,0 +1,37 @@
+name: repo-guard policy check
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: ["**"]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  policy-check:
+    name: repo-guard blocking check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run repo-guard
+        id: repo_guard
+        uses: netkeep80/repo-guard@b3a2c0c60631a4aaba38100c28fb6535e13fe018
+        with:
+          mode: check-pr
+          enforcement: blocking
+          node-version: 24
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish repo-guard summary
+        if: always()
+        run: |
+          echo "repo-guard result: ${{ steps.repo_guard.outputs.result }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.repo_guard.outputs.summary }}" >> "$GITHUB_STEP_SUMMARY"
