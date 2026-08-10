@@ -23,7 +23,7 @@ export function asetToGraphElements(aset, limit = 300) {
       data: {
         id: link.id,
         label,
-        exactId: link.id,
+        linkId: link.id,
         start: link.start,
         end: link.end,
         root: link.id === aset.root ? "yes" : "no",
