@@ -76,7 +76,7 @@ export function renderAset(container, aset, options = {}) {
     layout: layoutOptions(layoutId),
     minZoom: 0.08,
     maxZoom: 8,
-    wheelSensitivity: 0.22,
+    wheelSensitivity: 2.2,
     userZoomingEnabled: true,
     userPanningEnabled: true,
     autoungrabify: false,
