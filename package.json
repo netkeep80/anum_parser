@@ -1,0 +1,14 @@
+{
+  "name": "anum-parser-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Экспериментальная лаборатория сериализации и десериализации ачисел МТС",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/model.js && node --check src/formats.js && node --check src/deserializers.js && node --check src/visualizer.js && node --check src/app.js"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
