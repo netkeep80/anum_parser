@@ -1,6 +1,6 @@
 {
   "name": "anum-parser-lab",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "Экспериментальная лаборатория сериализации и десериализации ачисел МТС",
