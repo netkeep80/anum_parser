@@ -9,147 +9,34 @@
 </head>
 <body>
   <header class="hero">
-    <div>
-      <p class="eyebrow">МТС · экспериментальная лаборатория</p>
-      <h1>anum_parser</h1>
-      <p>Один физический источник → разные варианты десериализации → точная асеть → наглядное сравнение.</p>
-    </div>
-    <div class="hero-note">
-      <strong>Не нормативная МТС</strong>
-      <span>Алгоритмы помечены как экспериментальные. Принятые результаты переносятся в anum_docs отдельно.</span>
-    </div>
+    <div><p class="eyebrow">МТС · экспериментальная лаборатория</p><h1>anum_parser</h1><p>Один физический источник → разные варианты десериализации → точная асеть → наглядное сравнение.</p></div>
+    <div class="hero-note"><strong>Не нормативная МТС</strong><span>Алгоритмы помечены как экспериментальные. Принятые результаты переносятся в anum_docs отдельно.</span></div>
   </header>
-
   <main>
     <section class="panel controls">
-      <div class="field wide">
-        <label for="sample">Пример</label>
-        <select id="sample"></select>
-      </div>
-      <div class="field">
-        <label for="inputFormat">Входной формат</label>
-        <select id="inputFormat"></select>
-      </div>
-      <div class="field">
-        <label for="algorithm">Десериализатор A</label>
-        <select id="algorithm"></select>
-      </div>
-      <div class="field">
-        <label for="compareAlgorithm">Сравнить с B</label>
-        <select id="compareAlgorithm"></select>
-      </div>
-      <label class="check">
-        <input id="createStorage" type="checkbox">
-        Создать экспериментальную связь-хранилище: носитель ⟼ денотат
-      </label>
-      <div class="actions">
-        <button id="run" class="primary">Десериализовать</button>
-        <button id="load">Загрузить файл</button>
-        <input id="file" type="file" accept=".anum4,.anums,.json" hidden>
-      </div>
+      <div class="field wide"><label for="sample">Пример</label><select id="sample"></select></div>
+      <div class="field"><label for="inputFormat">Входной формат</label><select id="inputFormat"></select></div>
+      <div class="field"><label for="algorithm">Десериализатор A</label><select id="algorithm"></select></div>
+      <div class="field"><label for="compareAlgorithm">Сравнить с B</label><select id="compareAlgorithm"></select></div>
+      <label class="check"><input id="createStorage" type="checkbox">Создать экспериментальную связь-хранилище: носитель ⟼ денотат</label>
+      <div class="actions"><button id="run" class="primary">Десериализовать</button><button id="load">Загрузить файл</button><input id="file" type="file" accept=".anum4,.anums,.json" hidden></div>
       <div id="status" class="status" role="status" aria-live="polite"></div>
     </section>
-
-    <section class="panel source-panel">
-      <div class="section-title">
-        <div>
-          <p class="eyebrow">1. Физический источник</p>
-          <h2>Последовательность символов</h2>
-        </div>
-        <span class="hint">Символы ещё не являются абитами или связями.</span>
-      </div>
-      <textarea id="source" spellcheck="false" aria-label="Исходное ачисло"></textarea>
-    </section>
-
-    <section class="panel">
-      <div class="section-title">
-        <div>
-          <p class="eyebrow">Результат</p>
-          <h2>Ключевые точные ссылки</h2>
-        </div>
-      </div>
-      <div id="summary" class="metrics"></div>
-    </section>
-
+    <section class="panel source-panel"><div class="section-title"><div><p class="eyebrow">1. Физический источник</p><h2>Последовательность символов</h2></div><span class="hint">Символы ещё не являются абитами или связями.</span></div><textarea id="source" spellcheck="false" aria-label="Исходное ачисло"></textarea></section>
+    <section class="panel"><div class="section-title"><div><p class="eyebrow">Результат</p><h2>Ключевые точные ссылки</h2></div></div><div id="summary" class="metrics"></div></section>
     <section class="representation-grid">
-      <article class="panel rep">
-        <h3>2. Последовательность символов</h3>
-        <pre id="symbols"></pre>
-      </article>
-      <article class="panel rep">
-        <h3>3. Последовательность абитов</h3>
-        <pre id="abits"></pre>
-      </article>
-      <article class="panel rep">
-        <h3>4. Последовательности ссылок</h3>
-        <pre id="linkSequence"></pre>
-      </article>
-      <article class="panel rep">
-        <h3>5. Акорневые цепочки</h3>
-        <pre id="rootChains"></pre>
-      </article>
-      <article class="panel rep">
-        <h3>6. Связи-хранилища ачисел</h3>
-        <pre id="storedAnums"></pre>
-      </article>
-      <article class="panel rep">
-        <h3>Сравнение алгоритмов</h3>
-        <pre id="comparison"></pre>
-      </article>
+      <article class="panel rep"><h3>2. Последовательность символов</h3><pre id="symbols"></pre></article>
+      <article class="panel rep"><h3>3. Последовательность абитов</h3><pre id="abits"></pre></article>
+      <article class="panel rep"><h3>4. Последовательности ссылок</h3><pre id="linkSequence"></pre></article>
+      <article class="panel rep"><h3>5. Акорневые цепочки</h3><pre id="rootChains"></pre></article>
+      <article class="panel rep"><h3>6. Связи-хранилища ачисел</h3><pre id="storedAnums"></pre></article>
+      <article class="panel rep"><h3>Сравнение алгоритмов</h3><pre id="comparison"></pre></article>
     </section>
-
-    <section class="panel graph-panel">
-      <div class="section-title">
-        <div>
-          <p class="eyebrow">Точная сеть связей</p>
-          <h2>Асеть</h2>
-        </div>
-        <span class="legend"><i class="start-line"></i> начало &nbsp; <i class="end-line"></i> конец</span>
-      </div>
-      <svg id="graph" aria-label="Визуализация асети"></svg>
-    </section>
-
-    <section class="panel trace-panel">
-      <div class="section-title">
-        <div>
-          <p class="eyebrow">Пошаговое выполнение</p>
-          <h2>Трасса</h2>
-        </div>
-        <span class="hint">Трасса — отладочная запись алгоритма, а не новая сущность МТС.</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Шаг</th><th>Токен</th><th>Операция</th><th>Глубина</th><th>Текущий указатель / комментарий</th></tr></thead>
-          <tbody id="trace"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel export-panel">
-      <div class="section-title">
-        <div>
-          <p class="eyebrow">Импорт / экспорт</p>
-          <h2>Сохранить представление</h2>
-        </div>
-      </div>
-      <div class="export-controls">
-        <select id="outputFormat"></select>
-        <button id="save">Скачать</button>
-      </div>
-      <details>
-        <summary>Показать `.aset.json`</summary>
-        <pre id="asetJson"></pre>
-      </details>
-    </section>
+    <section class="panel graph-panel"><div class="section-title"><div><p class="eyebrow">Точная сеть связей</p><h2>Асеть</h2></div><span class="legend"><i class="start-line"></i> начало &nbsp; <i class="end-line"></i> конец</span></div><svg id="graph" aria-label="Визуализация асети"></svg></section>
+    <section class="panel trace-panel"><div class="section-title"><div><p class="eyebrow">Пошаговое выполнение</p><h2>Трасса</h2></div><span class="hint">Трасса — отладочная запись алгоритма, а не новая сущность МТС.</span></div><div class="table-wrap"><table><thead><tr><th>Шаг</th><th>Токен</th><th>Операция</th><th>Глубина</th><th>Текущий указатель / комментарий</th></tr></thead><tbody id="trace"></tbody></table></div></section>
+    <section class="panel export-panel"><div class="section-title"><div><p class="eyebrow">Импорт / экспорт</p><h2>Сериализовать результат</h2></div><span class="hint">Сериализатор выбирается отдельно от формата входа и десериализатора.</span></div><div class="export-controls"><select id="serializer"></select><button id="save">Скачать</button></div><details><summary>Показать `.aset.json`</summary><pre id="asetJson"></pre></details></section>
   </main>
-
-  <footer>
-    <span>anum_parser · сначала точные различения</span>
-    <a href="./docs/formats.md">Форматы</a>
-    <a href="./docs/history.md">История</a>
-    <a href="./docs/architecture.md">Архитектура</a>
-  </footer>
-
+  <footer><span>anum_parser · сначала точные различения</span><a href="./docs/formats.md">Форматы</a><a href="./docs/history.md">История</a><a href="./docs/architecture.md">Архитектура</a></footer>
   <script type="module" src="./src/app.js"></script>
 </body>
 </html>
