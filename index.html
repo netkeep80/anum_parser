@@ -33,44 +33,47 @@
       <article class="panel rep"><h3>Сравнение алгоритмов</h3><pre id="comparison"></pre></article>
     </section>
 
-    <section class="panel debugger-panel">
-      <div class="section-title">
-        <div><p class="eyebrow">Интерактивная машина</p><h2>Пошаговый отладчик</h2></div>
-        <span class="hint">Зелёный — добавлено · голубой пунктир — переиспользовано · жёлтый — current</span>
-      </div>
-      <div class="debug-controls">
-        <button id="debugFirst" type="button" title="Первый шаг">|←</button>
-        <button id="debugPrev" type="button" title="Предыдущий шаг">←</button>
-        <input id="debugRange" type="range" min="0" max="0" value="0" step="1" aria-label="Шаг выполнения">
-        <button id="debugNext" type="button" title="Следующий шаг">→</button>
-        <button id="debugLast" type="button" title="Последний шаг">→|</button>
-        <strong id="debugStep">—</strong>
-      </div>
-      <div id="debugSource" class="debug-source" aria-label="Текущая позиция исходной записи"></div>
-      <div class="debug-grid">
-        <article class="debug-card"><h3>Текущий шаг</h3><pre id="debugCurrent"></pre></article>
-        <article class="debug-card"><h3>Стек · вершина отмечена ↑</h3><div id="debugStack" class="debug-stack"></div></article>
-        <article class="debug-card"><h3>Изменение асети</h3><pre id="debugEffects"></pre></article>
-      </div>
+    <section class="machine-workspace" aria-label="Пошаговая машина и граф асети">
+      <section class="panel debugger-panel">
+        <div class="section-title">
+          <div><p class="eyebrow">Интерактивная машина</p><h2>Пошаговый отладчик</h2></div>
+          <span class="hint">Зелёный — добавлено · голубой пунктир — переиспользовано · жёлтый — current</span>
+        </div>
+        <div class="debug-controls">
+          <button id="debugFirst" type="button" title="Первый шаг">|←</button>
+          <button id="debugPrev" type="button" title="Предыдущий шаг">←</button>
+          <input id="debugRange" type="range" min="0" max="0" value="0" step="1" aria-label="Шаг выполнения">
+          <button id="debugNext" type="button" title="Следующий шаг">→</button>
+          <button id="debugLast" type="button" title="Последний шаг">→|</button>
+          <strong id="debugStep">—</strong>
+        </div>
+        <div id="debugSource" class="debug-source" aria-label="Текущая позиция исходной записи"></div>
+        <div class="debug-grid">
+          <article class="debug-card"><h3>Текущий шаг</h3><pre id="debugCurrent"></pre></article>
+          <article class="debug-card"><h3>Стек · вершина отмечена ↑</h3><div id="debugStack" class="debug-stack"></div></article>
+          <article class="debug-card"><h3>Изменение асети</h3><pre id="debugEffects"></pre></article>
+        </div>
+      </section>
+
+      <section class="panel graph-panel">
+        <div class="section-title graph-heading">
+          <div><p class="eyebrow">Асеть связей</p><h2>Граф представления</h2></div>
+          <div class="graph-toolbar" aria-label="Управление графом">
+            <label for="graphLayout">Раскладка</label>
+            <select id="graphLayout" title="Алгоритм авторазвёртки"></select>
+            <button id="graphFit" type="button" title="Вписать весь граф в область">Вписать</button>
+            <button id="graphZoomOut" type="button" class="graph-zoom" title="Отдалить">−</button>
+            <button id="graphZoomIn" type="button" class="graph-zoom" title="Приблизить">+</button>
+          </div>
+        </div>
+        <div class="graph-meta">
+          <span class="legend"><i class="start-line"></i> начало &nbsp; <i class="end-line"></i> конец</span>
+          <span class="hint">Показываются только связи выбранного шага · колесо — масштаб · фон — перемещение · связь — перетаскивание</span>
+        </div>
+        <div id="graph" role="application" aria-label="Интерактивная визуализация асети"></div>
+      </section>
     </section>
 
-    <section class="panel graph-panel">
-      <div class="section-title graph-heading">
-        <div><p class="eyebrow">Асеть связей</p><h2>Граф представления</h2></div>
-        <div class="graph-toolbar" aria-label="Управление графом">
-          <label for="graphLayout">Раскладка</label>
-          <select id="graphLayout" title="Алгоритм авторазвёртки"></select>
-          <button id="graphFit" type="button" title="Вписать весь граф в область">Вписать</button>
-          <button id="graphZoomOut" type="button" class="graph-zoom" title="Отдалить">−</button>
-          <button id="graphZoomIn" type="button" class="graph-zoom" title="Приблизить">+</button>
-        </div>
-      </div>
-      <div class="graph-meta">
-        <span class="legend"><i class="start-line"></i> начало &nbsp; <i class="end-line"></i> конец</span>
-        <span class="hint">Колесо — масштаб · фон — перемещение · связь — перетаскивание</span>
-      </div>
-      <div id="graph" role="application" aria-label="Интерактивная визуализация асети"></div>
-    </section>
     <section class="panel trace-panel"><div class="section-title"><div><p class="eyebrow">Все шаги</p><h2>Трасса</h2></div><span class="hint">Нажмите строку, чтобы перейти к этому состоянию.</span></div><div class="table-wrap"><table><thead><tr><th>Шаг</th><th>Позиция</th><th>Токен</th><th>Операция</th><th>Глубина</th><th>Current / комментарий</th></tr></thead><tbody id="trace"></tbody></table></div></section>
     <section class="panel export-panel"><div class="section-title"><div><p class="eyebrow">Импорт / экспорт</p><h2>Сериализовать результат</h2></div><span class="hint">Сериализатор выбирается отдельно от формата входа и десериализатора.</span></div><div class="export-controls"><select id="serializer"></select><button id="save">Скачать</button></div><details><summary>Показать `.aset.json`</summary><pre id="asetJson"></pre></details></section>
   </main>

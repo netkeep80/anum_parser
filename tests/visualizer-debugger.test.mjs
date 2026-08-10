@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -36,4 +37,18 @@ test("stylesheet содержит состояния hidden/created/reused/curre
   assert.ok(selectors.has("node.debug-reused"));
   assert.ok(selectors.has("edge.debug-reused"));
   assert.ok(selectors.has("node.debug-current"));
+});
+
+test("debugger расположен слева от графа в полноширинном адаптивном workspace", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  const workspace = html.match(/<section class="machine-workspace"[\s\S]*?<\/section>\s*<section class="panel trace-panel">/u)?.[0] ?? "";
+  assert.ok(workspace.includes('class="panel debugger-panel"'));
+  assert.ok(workspace.includes('class="panel graph-panel"'));
+  assert.ok(workspace.indexOf('class="panel debugger-panel"') < workspace.indexOf('class="panel graph-panel"'));
+
+  assert.match(css, /\.hero, main, footer \{ width: calc\(100% - 32px\); max-width: none;/u);
+  assert.match(css, /\.machine-workspace \{[\s\S]*?grid-template-columns: minmax\(420px, \.88fr\) minmax\(560px, 1\.35fr\);/u);
+  assert.match(css, /@media \(max-width: 1150px\) \{[\s\S]*?\.machine-workspace \{ grid-template-columns: 1fr; \}/u);
 });

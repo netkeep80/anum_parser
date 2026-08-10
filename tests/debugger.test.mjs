@@ -25,11 +25,16 @@ test("трасса 0.3 хранит позицию, stack/top/current и вид�
   assert.equal(open.top, 1);
   assert.equal(open.stack[1].current, "R");
 
-  const zero = trace.find((item) => item.token === "0");
+  const zeroIndex = trace.findIndex((item) => item.token === "0");
+  const zero = trace[zeroIndex];
   assert.equal(zero.resolved, "U");
   assert.equal(zero.current, result.result);
   assert.ok(zero.producedLinks.includes(result.result));
   assert.ok(zero.visibleLinkIds.includes(result.result));
+  assert.ok(!trace[zeroIndex - 1].visibleLinkIds.includes(result.result));
+  for (const later of trace.slice(zeroIndex)) {
+    assert.ok(later.visibleLinkIds.includes(result.result));
+  }
 
   const close = trace.find((item) => item.token === "]");
   assert.equal(close.resolved, "C");
