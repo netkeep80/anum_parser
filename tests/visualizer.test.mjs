@@ -57,6 +57,16 @@ test("конец связи — дуга от связи с градиентом
   assert.equal(end["line-gradient-stop-positions"], "0% 100%");
 });
 
+test("панель управления участвует в общем скролле страницы", async () => {
+  const css = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  const controlsRule = css.match(/\.controls\s*\{([^}]*)\}/s);
+
+  assert.ok(controlsRule, "правило .controls должно существовать");
+  assert.doesNotMatch(controlsRule[1], /position\s*:\s*sticky/i);
+  assert.doesNotMatch(controlsRule[1], /\btop\s*:/i);
+  assert.doesNotMatch(css, /position\s*:\s*sticky/i);
+});
+
 test("версия приложения имеет semver и выводится браузерным UI из package.json", async () => {
   const packageJson = JSON.parse(
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
