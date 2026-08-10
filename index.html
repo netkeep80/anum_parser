@@ -32,6 +32,28 @@
       <article class="panel rep"><h3>6. Роли хранения ачисел</h3><pre id="storedAnums"></pre></article>
       <article class="panel rep"><h3>Сравнение алгоритмов</h3><pre id="comparison"></pre></article>
     </section>
+
+    <section class="panel debugger-panel">
+      <div class="section-title">
+        <div><p class="eyebrow">Интерактивная машина</p><h2>Пошаговый отладчик</h2></div>
+        <span class="hint">Зелёный — добавлено · голубой пунктир — переиспользовано · жёлтый — current</span>
+      </div>
+      <div class="debug-controls">
+        <button id="debugFirst" type="button" title="Первый шаг">|←</button>
+        <button id="debugPrev" type="button" title="Предыдущий шаг">←</button>
+        <input id="debugRange" type="range" min="0" max="0" value="0" step="1" aria-label="Шаг выполнения">
+        <button id="debugNext" type="button" title="Следующий шаг">→</button>
+        <button id="debugLast" type="button" title="Последний шаг">→|</button>
+        <strong id="debugStep">—</strong>
+      </div>
+      <div id="debugSource" class="debug-source" aria-label="Текущая позиция исходной записи"></div>
+      <div class="debug-grid">
+        <article class="debug-card"><h3>Текущий шаг</h3><pre id="debugCurrent"></pre></article>
+        <article class="debug-card"><h3>Стек · вершина отмечена ↑</h3><div id="debugStack" class="debug-stack"></div></article>
+        <article class="debug-card"><h3>Изменение асети</h3><pre id="debugEffects"></pre></article>
+      </div>
+    </section>
+
     <section class="panel graph-panel">
       <div class="section-title graph-heading">
         <div><p class="eyebrow">Асеть связей</p><h2>Граф представления</h2></div>
@@ -49,7 +71,7 @@
       </div>
       <div id="graph" role="application" aria-label="Интерактивная визуализация асети"></div>
     </section>
-    <section class="panel trace-panel"><div class="section-title"><div><p class="eyebrow">Пошаговое выполнение</p><h2>Трасса</h2></div><span class="hint">Трасса — отладочная запись алгоритма, а не новая сущность МТС.</span></div><div class="table-wrap"><table><thead><tr><th>Шаг</th><th>Токен</th><th>Операция</th><th>Глубина</th><th>Текущий указатель / комментарий</th></tr></thead><tbody id="trace"></tbody></table></div></section>
+    <section class="panel trace-panel"><div class="section-title"><div><p class="eyebrow">Все шаги</p><h2>Трасса</h2></div><span class="hint">Нажмите строку, чтобы перейти к этому состоянию.</span></div><div class="table-wrap"><table><thead><tr><th>Шаг</th><th>Позиция</th><th>Токен</th><th>Операция</th><th>Глубина</th><th>Current / комментарий</th></tr></thead><tbody id="trace"></tbody></table></div></section>
     <section class="panel export-panel"><div class="section-title"><div><p class="eyebrow">Импорт / экспорт</p><h2>Сериализовать результат</h2></div><span class="hint">Сериализатор выбирается отдельно от формата входа и десериализатора.</span></div><div class="export-controls"><select id="serializer"></select><button id="save">Скачать</button></div><details><summary>Показать `.aset.json`</summary><pre id="asetJson"></pre></details></section>
   </main>
   <footer><span>anum_parser · сначала различения</span><span id="appVersion" class="app-version" aria-label="Версия приложения">v…</span><a href="./docs/formats.md">Форматы</a><a href="./docs/history.md">История</a><a href="./docs/architecture.md">Архитектура</a></footer>
