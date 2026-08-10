@@ -103,7 +103,7 @@ pre { margin: 9px 0 0; padding: 11px; max-height: 330px; overflow: auto; color: 
   line-height: 1;
 }
 .start-line::after { background: linear-gradient(90deg, var(--start), var(--b)); }
-.end-line::before { background: linear-gradient(90deg, var(--b), var(--a)); }
+.end-line::before { background: linear-gradient(90deg, var(--b), var(--start)); }
 .end-line::after {
   content: "";
   position: absolute;
@@ -111,7 +111,7 @@ pre { margin: 9px 0 0; padding: 11px; max-height: 330px; overflow: auto; color: 
   top: 2px;
   border-top: 5px solid transparent;
   border-bottom: 5px solid transparent;
-  border-left: 8px solid var(--a);
+  border-left: 8px solid var(--start);
 }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .85rem; }

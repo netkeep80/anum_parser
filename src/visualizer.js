@@ -58,6 +58,23 @@ export function asetToGraphElements(aset, limit = 300) {
   return elements;
 }
 
+// В базовой проекции обе роли хранятся как link -> pole. Для визуального языка МТС
+// start должен входить в центральный узел связи: startPole -> link,
+// а end — выходить из него: link -> endPole.
+export function graphElementsForRendering(aset, limit = 300) {
+  return asetToGraphElements(aset, limit).map((element) => {
+    if (element.data?.role !== "start") return element;
+    return {
+      ...element,
+      data: {
+        ...element.data,
+        source: element.data.target,
+        target: element.data.source,
+      },
+    };
+  });
+}
+
 export function renderAset(container, aset, options = {}) {
   destroyGraph(container);
   if (!aset?.links?.length) {
@@ -68,7 +85,7 @@ export function renderAset(container, aset, options = {}) {
   const cytoscape = requireCytoscape();
   const layoutId = options.layout ?? container.dataset.layout ?? "cose";
   container.dataset.layout = layoutId;
-  const elements = asetToGraphElements(aset);
+  const elements = graphElementsForRendering(aset);
   const cy = cytoscape({
     container,
     elements,
@@ -236,14 +253,14 @@ export function graphStyle() {
         "loop-direction": "-70deg",
         "loop-sweep": "-65deg",
         "line-fill": "linear-gradient",
-        "line-gradient-stop-colors": "#67e8b3 #ff657a",
+        "line-gradient-stop-colors": "#ff657a #67e8b3",
         "line-gradient-stop-positions": "0% 100%",
         "line-color": "#67e8b3",
         "source-arrow-shape": "none",
         "target-arrow-shape": "none",
-        "target-label": "×",
-        "target-text-offset": 8,
-        "target-text-rotation": "none",
+        "source-label": "×",
+        "source-text-offset": 8,
+        "source-text-rotation": "none",
         "font-size": "16px",
         "font-weight": "bold",
         color: "#ff657a",
@@ -260,12 +277,12 @@ export function graphStyle() {
         "loop-direction": "70deg",
         "loop-sweep": "65deg",
         "line-fill": "linear-gradient",
-        "line-gradient-stop-colors": "#67e8b3 #73a7ff",
+        "line-gradient-stop-colors": "#67e8b3 #ff657a",
         "line-gradient-stop-positions": "0% 100%",
         "line-color": "#67e8b3",
         "source-arrow-shape": "none",
         "target-arrow-shape": "triangle",
-        "target-arrow-color": "#73a7ff",
+        "target-arrow-color": "#ff657a",
         "target-arrow-fill": "filled",
       },
     },

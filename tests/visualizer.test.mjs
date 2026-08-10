@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { graphStyle } from "../src/visualizer.js";
+import { graphElementsForRendering, graphStyle } from "../src/visualizer.js";
 
 function styleFor(selector) {
   const rule = graphStyle().find((item) => item.selector === selector);
@@ -10,23 +10,39 @@ function styleFor(selector) {
   return rule.style;
 }
 
-test("начало связи — дуга с крестиком у начального полюса и градиентом красный -> зелёный к связи", () => {
+test("визуальная ориентация связи X = A ⟼ B: начало A -> X, конец X -> B", () => {
+  const aset = {
+    root: "X",
+    labels: {},
+    links: [
+      { id: "X", start: "A", end: "B" },
+      { id: "A", start: "A", end: "A" },
+      { id: "B", start: "B", end: "B" },
+    ],
+  };
+  const elements = graphElementsForRendering(aset);
+  const start = elements.find((item) => item.data.id === "pole-start:X");
+  const end = elements.find((item) => item.data.id === "pole-end:X");
+
+  assert.deepEqual([start.data.source, start.data.target], ["A", "X"]);
+  assert.deepEqual([end.data.source, end.data.target], ["X", "B"]);
+});
+
+test("начало связи — дуга с красным крестиком и градиентом красный -> зелёный к связи", () => {
   const style = styleFor('edge[role = "start"]');
 
   assert.equal(style["curve-style"], "unbundled-bezier");
   assert.ok(style["control-point-distances"] < 0);
-  assert.equal(style["target-label"], "×");
-  assert.equal(style["source-label"], undefined);
+  assert.equal(style["source-label"], "×");
+  assert.equal(style["target-label"], undefined);
   assert.equal(style["source-arrow-shape"], "none");
   assert.equal(style["target-arrow-shape"], "none");
   assert.equal(style["line-fill"], "linear-gradient");
-  // Ребро Cytoscape хранится link -> start, поэтому визуальный смысл start -> link
-  // требует обратного порядка stop-цветов: зелёный у связи, красный у начального полюса.
-  assert.equal(style["line-gradient-stop-colors"], "#67e8b3 #ff657a");
+  assert.equal(style["line-gradient-stop-colors"], "#ff657a #67e8b3");
   assert.equal(style["line-gradient-stop-positions"], "0% 100%");
 });
 
-test("конец связи — встречная дуга со стрелкой и градиентом зелёный -> синий", () => {
+test("конец связи — дуга от связи с градиентом зелёный -> красный и красным треугольником", () => {
   const start = styleFor('edge[role = "start"]');
   const end = styleFor('edge[role = "end"]');
 
@@ -35,9 +51,9 @@ test("конец связи — встречная дуга со стрелко�
   assert.equal(end["control-point-distances"], -start["control-point-distances"]);
   assert.equal(end["source-arrow-shape"], "none");
   assert.equal(end["target-arrow-shape"], "triangle");
-  assert.equal(end["target-arrow-color"], "#73a7ff");
+  assert.equal(end["target-arrow-color"], "#ff657a");
   assert.equal(end["line-fill"], "linear-gradient");
-  assert.equal(end["line-gradient-stop-colors"], "#67e8b3 #73a7ff");
+  assert.equal(end["line-gradient-stop-colors"], "#67e8b3 #ff657a");
   assert.equal(end["line-gradient-stop-positions"], "0% 100%");
 });
 
