@@ -1,6 +1,7 @@
 # anum_parser
 
 Отдельный экспериментальный репозиторий для сериализации, десериализации и визуализации ачисел.
+**Публичный URL**: [https://netkeep80.github.io/anum_parser/](https://netkeep80.github.io/anum_parser/)
 
 ## Зачем он нужен
 
