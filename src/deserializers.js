@@ -51,22 +51,25 @@ function deserializeStringFlat(artifact, options = {}) {
   const builder = sourceBuilder(artifact);
   const trace = [];
   const refs = artifact.symbols.map((symbol, index) => {
+    const before = linkIdSet(builder);
     const ref = builder.symbolValue(symbol);
-    trace.push(step(index, symbol, "resolve-symbol", 0, ref, [ref], [], `UTF-8 символ ${JSON.stringify(symbol)} -> ${ref}`));
+    const produced = newLinksSince(builder, before);
+    trace.push(simpleStep(builder, trace.length, index, symbol, ref, "resolve-symbol", ref, produced,
+      `UTF-8 символ ${JSON.stringify(symbol)} -> ${ref}`));
     return ref;
   });
   const sourceSequence = builder.addSymbolSequence(artifact.data, artifact.symbols);
   const linkSequence = builder.addLinkSequence(refs, { role: "resolved-symbol-values" });
   const carrier = builder.rootChain(refs, { sourceSequence: linkSequence });
   const folded = builder.leftFold(refs, { labelPrefix: "string-fold" });
-  trace.push(step(trace.length, "", "finish", 0, folded.result, refs, folded.created, "Левая свёртка строковых значений"));
+  trace.push(simpleStep(builder, trace.length, artifact.symbols.length, "", null, "finish", folded.result,
+    folded.created, "Левая свёртка строковых значений"));
   finish(builder, artifact, {
     algorithm: "string-flat-v0",
     sourceSequence,
     linkSequence,
     carrier: carrier.head,
     denotation: folded.result,
-    options,
   });
   maybeStore(builder, carrier.head, folded.result, options);
   return { aset: builder.finish(), trace, result: folded.result, carrier: carrier.head };
@@ -75,13 +78,15 @@ function deserializeStringFlat(artifact, options = {}) {
 function deserializeAbitFlat(artifact, options = {}) {
   assertKind(artifact, "quaternary");
   const { builder, refs, sourceSequence, abitSequence } = prepareAbits(artifact);
-  const trace = refs.map((ref, index) =>
-    step(index, artifact.symbols[index], "resolve-abit", 0, ref, [ref], [], `${artifact.symbols[index]} -> ${ref}`),
-  );
   const physicalLinks = builder.addLinkSequence(refs, { role: "physical-abit-values" });
   const carrier = builder.rootChain(refs, { sourceSequence: physicalLinks });
+  const trace = refs.map((ref, index) =>
+    simpleStep(builder, index, index, artifact.symbols[index], ref, "resolve-abit", ref, [],
+      `${artifact.symbols[index]} -> ${ref}`),
+  );
   const folded = builder.leftFold(refs, { labelPrefix: "abit-flat-fold" });
-  trace.push(step(trace.length, "", "finish", 0, folded.result, refs, folded.created, "Плоская свёртка всех абитов"));
+  trace.push(simpleStep(builder, trace.length, artifact.symbols.length, "", null, "finish", folded.result,
+    folded.created, "Плоская свёртка всех абитов"));
   finish(builder, artifact, {
     algorithm: "abit-flat-v0",
     sourceSequence,
@@ -89,7 +94,6 @@ function deserializeAbitFlat(artifact, options = {}) {
     linkSequence: physicalLinks,
     carrier: carrier.head,
     denotation: folded.result,
-    options,
   });
   maybeStore(builder, carrier.head, folded.result, options);
   return { aset: builder.finish(), trace, result: folded.result, carrier: carrier.head };
@@ -103,12 +107,16 @@ function deserializeStack(artifact, options = {}) {
   const trace = [];
   const frames = [newFrame(null)];
 
+  trace.push(snapshot(builder, trace.length, -1, "", null, "start", frames, [], [],
+    "Исходная запись и её carrier загружены; выполнение десериализатора ещё не начато"));
+
   for (let index = 0; index < artifact.symbols.length; index += 1) {
     const token = artifact.symbols[index];
     const ref = refs[index];
     if (token === "[") {
       frames.push(newFrame(index));
-      trace.push(snapshot(index, token, "open", frames, [], "Сохранить внешний контекст; новый current = ∞"));
+      trace.push(snapshot(builder, trace.length, index, token, ref, "open", frames, [], [],
+        "Сохранить внешний контекст; новый current = ∞"));
       continue;
     }
     if (token === "]") {
@@ -118,20 +126,26 @@ function deserializeStack(artifact, options = {}) {
       const inner = frames.pop();
       let returned = inner.started ? inner.current : "R";
       const produced = [];
+      const reused = [];
       if (options.closeStrategy === "root-wrap" && inner.started) {
         const ensured = builder.ensureLink("R", returned, {
           label: `close-wrap:${index}`,
           tags: ["experimental-close-wrap"],
         });
         returned = ensured.ref;
-        if (ensured.created) produced.push(returned);
+        recordEnsured(ensured, produced, reused);
       }
-      appendValue(builder, frames.at(-1), returned, produced, `close:${index}`);
-      trace.push(snapshot(index, token, `close:${options.closeStrategy}`, frames, produced, `Группа вернула ${returned}`));
+      appendValue(builder, frames.at(-1), returned, produced, reused, `close:${index}`);
+      trace.push(snapshot(builder, trace.length, index, token, ref, `close:${options.closeStrategy}`,
+        frames, produced, reused, `Группа вернула ${returned}`));
       continue;
     }
-    appendValue(builder, frames.at(-1), ref, [], `value:${index}`);
-    trace.push(snapshot(index, token, "value", frames, [], `Добавить связь-абит ${ref} в текущий контекст`));
+
+    const produced = [];
+    const reused = [];
+    appendValue(builder, frames.at(-1), ref, produced, reused, `value:${index}`);
+    trace.push(snapshot(builder, trace.length, index, token, ref, "value", frames, produced, reused,
+      `Добавить связь-абит ${ref} в текущий контекст`));
   }
 
   if (frames.length !== 1) {
@@ -142,7 +156,6 @@ function deserializeStack(artifact, options = {}) {
   const rootFrame = frames[0];
   const result = rootFrame.started ? rootFrame.current : "R";
   const resultSequence = builder.addLinkSequence(rootFrame.values, { role: "top-level-values" });
-  trace.push(snapshot(trace.length, "", "finish", frames, [], `Результат верхнего контекста: ${result}`));
   finish(builder, artifact, {
     algorithm: options.closeStrategy === "root-wrap" ? "stack-root-wrap-v0" : "stack-group-value-v0",
     sourceSequence,
@@ -151,9 +164,10 @@ function deserializeStack(artifact, options = {}) {
     resultSequence,
     carrier: carrier.head,
     denotation: result,
-    options,
   });
   maybeStore(builder, carrier.head, result, options);
+  trace.push(snapshot(builder, trace.length, artifact.symbols.length, "", null, "finish", frames, [], [],
+    `Результат верхнего контекста: ${result}`));
   return { aset: builder.finish(), trace, result, carrier: carrier.head };
 }
 
@@ -182,7 +196,7 @@ function newFrame(openIndex) {
   return { openIndex, values: [], current: "R", started: false };
 }
 
-function appendValue(builder, frame, value, produced, label) {
+function appendValue(builder, frame, value, produced, reused, label) {
   frame.values.push(value);
   if (!frame.started) {
     frame.current = value;
@@ -194,41 +208,72 @@ function appendValue(builder, frame, value, produced, label) {
     tags: ["sequence-fold-step"],
   });
   frame.current = ensured.ref;
-  if (ensured.created) produced.push(frame.current);
+  recordEnsured(ensured, produced, reused);
 }
 
-function snapshot(index, token, operation, frames, producedLinks, note) {
+function recordEnsured(ensured, produced, reused) {
+  const target = ensured.created ? produced : reused;
+  if (!target.includes(ensured.ref)) target.push(ensured.ref);
+}
+
+function snapshot(builder, stepIndex, sourceIndex, token, resolved, operation, frames, producedLinks, reusedLinks, note) {
   const frame = frames.at(-1);
-  return step(
-    index,
-    token,
-    operation,
-    frames.length - 1,
-    frame.started ? frame.current : "R",
-    frame.values,
-    producedLinks,
-    note,
-  );
-}
-
-function step(stepIndex, token, operation, depth, current, values, producedLinks, note) {
   return {
     step: stepIndex,
+    sourceIndex,
     token,
+    resolved,
     operation,
-    depth,
-    current,
-    values: [...values],
+    depth: frames.length - 1,
+    top: frames.length - 1,
+    current: frame.started ? frame.current : "R",
+    values: [...frame.values],
+    stack: frames.map((item, level) => ({
+      level,
+      openIndex: item.openIndex,
+      current: item.started ? item.current : "R",
+      started: item.started,
+      values: [...item.values],
+    })),
     producedLinks: [...producedLinks],
+    reusedLinks: [...reusedLinks],
+    visibleLinkIds: builder.aset.links.map((link) => link.id),
     note,
   };
+}
+
+function simpleStep(builder, stepIndex, sourceIndex, token, resolved, operation, current, producedLinks, note) {
+  return {
+    step: stepIndex,
+    sourceIndex,
+    token,
+    resolved,
+    operation,
+    depth: 0,
+    top: 0,
+    current,
+    values: current ? [current] : [],
+    stack: [],
+    producedLinks: [...producedLinks],
+    reusedLinks: [],
+    visibleLinkIds: builder.aset.links.map((link) => link.id),
+    note,
+  };
+}
+
+function linkIdSet(builder) {
+  return new Set(builder.aset.links.map((link) => link.id));
+}
+
+function newLinksSince(builder, before) {
+  return builder.aset.links.map((link) => link.id).filter((id) => !before.has(id));
 }
 
 function finish(builder, artifact, data) {
   builder.setProvenance({
     status: "experimental",
     deserializer: data.algorithm,
-    traceVersion: "0.2",
+    traceVersion: "0.3",
     representations: {
       sourceSequence: data.sourceSequence,
       ...(data.abitSequence ? { abitSequence: data.abitSequence } : {}),
