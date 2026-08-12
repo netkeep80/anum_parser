@@ -34,7 +34,8 @@ async function boot() {
     option("anum4", ".anum4 — четверичное"),
     option("anums", ".anums — строковое"),
     option("anum-json", ".anum.json — контейнер"),
-    option("aset", ".aset.json — асеть"),
+    option("aset", ".aset.json — открыть асеть"),
+    option("aset-carrier", ".aset.json — прочитать carrier через ANUM v0.4"),
   );
   ui.graphLayout.replaceChildren(...GRAPH_LAYOUTS.map((layout) => option(layout.id, layout.title)));
   ui.graphLayout.value = "cose";
@@ -89,7 +90,11 @@ function refreshAlgorithms(preferred = null) {
     ui.compareAlgorithm.replaceChildren(option("none", "—"));
     return;
   }
-  let kind = ui.inputFormat.value === "anums" ? "string" : "quaternary";
+  let kind = ui.inputFormat.value === "anums"
+    ? "string"
+    : ui.inputFormat.value === "aset-carrier"
+      ? "aset-carrier"
+      : "quaternary";
   if (ui.inputFormat.value === "anum-json") {
     try { kind = JSON.parse(ui.source.value || "{}").kind ?? kind; } catch { /* diagnostic при запуске */ }
   }
