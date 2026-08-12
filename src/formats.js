@@ -5,6 +5,7 @@ export const INPUT_FORMATS = {
   anums: { id: "anums", extension: ".anums", title: "Строковое ачисло" },
   anumJson: { id: "anum-json", extension: ".anum.json", title: "Самодокументируемое ачисло" },
   aset: { id: "aset", extension: ".aset.json", title: "Асеть JSON" },
+  asetCarrier: { id: "aset-carrier", extension: ".aset.json", title: "Асеть JSON как existing carrier" },
 };
 
 export const ABIT_PROFILE = "mts-abit-v1";
@@ -80,6 +81,7 @@ export function parseArtifact(text, format) {
     case "anum-json":
       return parseAnumJson(text);
     case "aset":
+    case "aset-carrier":
       return parseAsetJson(text);
     default:
       throw formatError("unknown-input-format", `Неизвестный формат: ${format}`);
