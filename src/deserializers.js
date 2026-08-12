@@ -11,28 +11,38 @@ export const DESERIALIZERS = [
     deserialize: deserializeStringFlat,
   },
   {
+    id: "anum-v0.4",
+    title: "ANUM v0.4: принятая стековая десериализация",
+    status: "accepted",
+    inputKinds: ["quaternary"],
+    description: "[ открывает контекст от ∞; пустой ] возвращает ∞, непустой ] возвращает ∞⟼value.",
+    deserialize: (artifact, options) => deserializeStack(artifact, {
+      ...options,
+      algorithm: "anum-v0.4",
+      status: "accepted",
+      closeStrategy: "root-wrap",
+    }),
+  },
+  {
+    id: "stack-group-value-v0",
+    title: "Эксперимент: группа возвращает value без ∞-обёртки",
+    status: "experimental",
+    inputKinds: ["quaternary"],
+    description: "Историко-экспериментальный контраст к ANUM v0.4: ] передаёт внутренний результат напрямую.",
+    deserialize: (artifact, options) => deserializeStack(artifact, {
+      ...options,
+      algorithm: "stack-group-value-v0",
+      status: "experimental",
+      closeStrategy: "group-value",
+    }),
+  },
+  {
     id: "abit-flat-v0",
     title: "Абиты: плоская левая свёртка",
     status: "experimental",
     inputKinds: ["quaternary"],
-    description: "Baseline: [ ] 1 0 считаются четырьмя корневыми связями без стековой семантики.",
+    description: "Контрольный вариант: [ ] 1 0 считаются четырьмя корневыми связями без стековой семантики.",
     deserialize: deserializeAbitFlat,
-  },
-  {
-    id: "stack-group-value-v0",
-    title: "Стек: группа возвращает значение",
-    status: "experimental",
-    inputKinds: ["quaternary"],
-    description: "[ открывает контекст от ∞, ] передаёт внутренний результат родителю как одно значение.",
-    deserialize: (artifact, options) => deserializeStack(artifact, { ...options, closeStrategy: "group-value" }),
-  },
-  {
-    id: "stack-root-wrap-v0",
-    title: "Стек: непустая группа возвращает ∞⟼value",
-    status: "experimental",
-    inputKinds: ["quaternary"],
-    description: "Как stack-group-value, но CLOSE непустой группы получает связь ∞⟼value по обычному правилу МТС.",
-    deserialize: (artifact, options) => deserializeStack(artifact, { ...options, closeStrategy: "root-wrap" }),
   },
 ];
 
@@ -66,6 +76,7 @@ function deserializeStringFlat(artifact, options = {}) {
     folded.created, "Левая свёртка строковых значений"));
   finish(builder, artifact, {
     algorithm: "string-flat-v0",
+    status: "experimental",
     sourceSequence,
     linkSequence,
     carrier: carrier.head,
@@ -89,6 +100,7 @@ function deserializeAbitFlat(artifact, options = {}) {
     folded.created, "Плоская свёртка всех абитов"));
   finish(builder, artifact, {
     algorithm: "abit-flat-v0",
+    status: "experimental",
     sourceSequence,
     abitSequence,
     linkSequence: physicalLinks,
@@ -130,7 +142,7 @@ function deserializeStack(artifact, options = {}) {
       if (options.closeStrategy === "root-wrap" && inner.started) {
         const ensured = builder.ensureLink("R", returned, {
           label: `close-wrap:${index}`,
-          tags: ["experimental-close-wrap"],
+          tags: ["sequence-group-close"],
         });
         returned = ensured.ref;
         recordEnsured(ensured, produced, reused);
@@ -157,7 +169,8 @@ function deserializeStack(artifact, options = {}) {
   const result = rootFrame.started ? rootFrame.current : "R";
   const resultSequence = builder.addLinkSequence(rootFrame.values, { role: "top-level-values" });
   finish(builder, artifact, {
-    algorithm: options.closeStrategy === "root-wrap" ? "stack-root-wrap-v0" : "stack-group-value-v0",
+    algorithm: options.algorithm,
+    status: options.status,
     sourceSequence,
     abitSequence,
     linkSequence: physicalLinks,
@@ -271,7 +284,7 @@ function newLinksSince(builder, before) {
 
 function finish(builder, artifact, data) {
   builder.setProvenance({
-    status: "experimental",
+    status: data.status ?? "experimental",
     deserializer: data.algorithm,
     traceVersion: "0.3",
     representations: {
