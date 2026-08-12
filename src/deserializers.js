@@ -1,5 +1,6 @@
 import { ABIT_REFS, AsetBuilder } from "./model.js";
-import { ABIT_PROFILE } from "./formats.js";
+import { ABIT_PROFILE, parseAnum4 } from "./formats.js";
+import { carrierFromProvenance, decodeCarrierStream } from "./carrier.js";
 
 export const DESERIALIZERS = [
   {
@@ -14,14 +15,9 @@ export const DESERIALIZERS = [
     id: "anum-v0.4",
     title: "ANUM v0.4: принятая стековая десериализация",
     status: "accepted",
-    inputKinds: ["quaternary"],
-    description: "[ открывает контекст от ∞; пустой ] возвращает ∞, непустой ] возвращает ∞⟼value.",
-    deserialize: (artifact, options) => deserializeStack(artifact, {
-      ...options,
-      algorithm: "anum-v0.4",
-      status: "accepted",
-      closeStrategy: "root-wrap",
-    }),
+    inputKinds: ["quaternary", "aset-carrier"],
+    description: "Raw и явно выбранный existing carrier сходятся в одной стековой машине: пустой ] возвращает ∞, непустой ] — ∞⟼value.",
+    deserialize: deserializeAccepted,
   },
   {
     id: "stack-group-value-v0",
@@ -54,6 +50,31 @@ export function deserializerById(id) {
 
 export function availableDeserializers(kind) {
   return DESERIALIZERS.filter((item) => item.inputKinds.includes(kind));
+}
+
+function deserializeAccepted(artifact, options = {}) {
+  const stackOptions = {
+    ...options,
+    algorithm: "anum-v0.4",
+    status: "accepted",
+    closeStrategy: "root-wrap",
+  };
+  if (artifact?.format !== "mts-aset") {
+    return deserializeStack(artifact, stackOptions);
+  }
+
+  const carrierRef = carrierFromProvenance(artifact);
+  const decoded = decodeCarrierStream(artifact, carrierRef);
+  const result = deserializeStack(parseAnum4(decoded.source), stackOptions);
+  result.aset.provenance.transport = {
+    kind: "existing-carrier",
+    carrierRef,
+    readOnly: true,
+    decodedBeforeStackMachine: true,
+    sourceAset: `${artifact.format}/${artifact.version}`,
+    prefixCount: decoded.sequence.prefixes.length,
+  };
+  return result;
 }
 
 function deserializeStringFlat(artifact, options = {}) {
