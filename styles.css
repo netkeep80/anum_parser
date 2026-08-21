@@ -145,6 +145,7 @@ pre { margin: 9px 0 0; padding: 11px; max-height: 330px; overflow: auto; color: 
   font-weight: 900;
   line-height: 1;
 }
+/* RGB-путь связи: начало красное -> центр зелёный -> конец синий. */
 .start-line::after { background: linear-gradient(90deg, var(--start), var(--b)); }
 .end-line::before { background: linear-gradient(90deg, var(--b), var(--end)); }
 .end-line::after {
