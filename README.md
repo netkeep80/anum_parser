@@ -65,6 +65,16 @@ package             = @mts/core@0.10.0
 artifact sha256     = 0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007
 ```
 
+Lock также fail-closed фиксирует consumer policy:
+
+```text
+channel                              = accepted-current
+floatingRefAllowed                   = false
+candidateAllowedAsCurrent            = false
+deepSourceImportAllowed              = false
+vendoredCurrentSemanticSourceAllowed = false
+```
+
 Перед тестами и Pages deploy `scripts/materialize-mts-core.mjs` заново получает exact source SHA, проверяет accepted contract/conformance, собирает package, сверяет digest и только затем создаёт gitignored `generated/mts-core/`.
 
 `generated/` — build product, а не второй источник семантики.
