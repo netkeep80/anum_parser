@@ -56,6 +56,7 @@ test("debugger edge states не перетирают RGB-семантику по
   }
 
   assert.equal(produced.width, 4);
+  assert.equal(produced["line-style"], undefined);
   assert.equal(reused.width, 4);
   assert.equal(reused["line-style"], "dashed");
 
