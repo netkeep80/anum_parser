@@ -1,10 +1,81 @@
 # Архитектура лаборатории
 
-`anum_parser` — статическая веб-лаборатория для исполнения, сравнения и визуализации ачисел МТС. Текущая принятая четверичная поверхность синхронизирована с `anum-deserialization/v0.4` и MTS v0.6 из `anum_docs`.
+`anum_parser` — статическая веб-лаборатория для исполнения, сравнения и визуализации ачисел МТС.
 
-Лаборатория сохраняет экспериментальные алгоритмы рядом с принятым, но статус алгоритма всегда явный. Эксперимент не становится нормой только потому, что он реализован в коде.
+Текущая accepted semantic authority находится **не в этом репозитории**, а в exact-pinned пакете `@mts/core` из `netkeep80/anum_docs`.
 
-## 1. Базовое тождество связи
+```text
+accepted MTS       = v0.10
+package            = @mts/core@0.10.0
+upstream SHA       = 957c818d82bd3211f2a59547fff28e8ed0ec4331
+contract           = mts-contract/v0.10
+conformance        = mts-conformance/v0.10
+consumer lock      = contracts/mts-core-consumer-lock.json
+```
+
+Лабораторный id `anum-v0.4` сохранён для совместимости corpus/UI и **не является номером MTS release**.
+
+MTS v0.11 на текущем upstream остаётся candidate / NOT ACCEPTED и не является production dependency `anum_parser`.
+
+## 1. Главная граница доверия
+
+Архитектура после синхронизации устроена так:
+
+```text
+strict physical input
+        |
+        v
+local presentation validation
+        |
+        v
+exact abit sequence
+        |
+        v
+@mts/core.executeAbits          <-- semantic authority
+        |
+        v
+instrumented StackAlgebra
+        |
+        v
+AsetBuilder + trace projection  <-- presentation/visualization adapter
+```
+
+Критический инвариант:
+
+```text
+local adapter may materialize only link(start,end)
+requests actually made by @mts/core
+```
+
+Он не имеет права независимо решать accepted `OPEN/CLOSE/VALUE` semantics.
+
+Локальный `deserializeStack` остаётся только для явно `experimental` алгоритмов. Попытка использовать его с accepted status должна завершаться отказом.
+
+## 2. Exact consumer materialization
+
+`anum_parser` не vendor-ит текущий `anum_docs/ts/src/**` и не зависит от moving `main`.
+
+Перед test/check/Pages выполняется:
+
+```text
+scripts/materialize-mts-core.mjs
+```
+
+Материализатор:
+
+1. читает `contracts/mts-core-consumer-lock.json`;
+2. получает ровно указанный upstream commit SHA;
+3. проверяет accepted contract/conformance;
+4. выполняет `npm ci` и build в `anum_docs/ts`;
+5. делает `npm pack`;
+6. сверяет exact SHA256 artifact;
+7. копирует проверенный `dist/src` в gitignored `generated/mts-core/`;
+8. вычисляет digest generated tree;
+9. создаёт generated provenance JSON/ESM module.
+
+`generated/` — только build product. Semantic authority остаётся upstream accepted package + exact lock.
+
+## 3. Базовое тождество связи
 
 Для МТС действует:
 
@@ -14,26 +85,25 @@
 A = C ∧ B = D
 ```
 
-Связь полностью определяется своими полюсами. Поэтому строитель асети работает как каноническая операция:
+Связь полностью определяется полюсами. Локальный `AsetBuilder.ensureLink(start,end)` поэтому выполняет каноническую materialization операцию:
 
 ```text
-ensureLink(start, end):
-    если связь такой формы уже есть -> вернуть её
-    иначе -> материализовать её
+если такая форма уже есть -> вернуть существующую ссылку
+иначе -> добавить presentation record
 ```
 
-Технический `id` нужен только для адресации записи внутри конкретной `.aset.json`. Он не входит в смысловое тождество связи.
+Это не делает `AsetBuilder` semantic authority. В accepted path решение **какую пару материализовать** приходит только от `@mts/core`.
 
 Следствия:
 
 - две записи одной формы в `.aset.json` запрещены;
-- повтор одной ссылки в последовательности не создаёт новый экземпляр связи;
-- повторная операция `A ⟼ B` может ничего не добавить в асеть;
+- повтор ссылки в последовательности не создаёт новый экземпляр связи;
+- повторный `A ⟼ B` может переиспользовать existing presentation record;
 - `R ⟼ R = R`.
 
-## 2. Корневой базис и четыре абита
+## 4. Корневой базис и четыре абита
 
-Канонический корневой базис:
+Accepted v0.10 сохраняет базис:
 
 ```text
 R = R ⟼ R
@@ -43,7 +113,7 @@ L = O ⟼ C
 U = C ⟼ O
 ```
 
-Четверичный транспорт содержит ровно четыре знака:
+Четверичный transport:
 
 ```text
 [ -> O
@@ -52,149 +122,113 @@ U = C ⟼ O
 0 -> U
 ```
 
-Акорень `R = ∞` не является пятым передаваемым абитом. Каждый новый контекст стековой машины автоматически начинается от `R`.
+Q alphabet остаётся ровно:
 
-## 3. Два входных пути одной машины v0.4
+```text
+[ ] 1 0
+```
 
-Принятая четверичная десериализация имеет **одну** машину `OPEN/CLOSE/VALUE` и два входных транспорта.
+`R = ∞` не является пятым абитом.
 
-### 3.1. Физический поток
+## 5. Strict `.anum4` как presentation boundary
 
-`.anum4` непосредственно задаёт последовательность `[ ] 1 0`.
+Локальный `.anum4` parser намеренно строже upstream raw parser: он принимает только literal `[ ] 1 0` без whitespace/comments.
+
+Это различие классифицировано differential evidence как:
+
+```text
+presentation-boundary-not-semantic-mismatch
+```
+
+То есть:
+
+```text
+.anum4 strict validation
+  -> artifact.symbols
+  -> @mts/core.executeAbits(artifact.symbols, algebra)
+```
+
+Не следует ослаблять `.anum4` grammar только потому, что upstream `parseRawQuaternary` поддерживает дополнительную raw normalization surface.
+
+## 6. Два входных транспорта одного accepted runtime
+
+### 6.1. Физический `.anum4`
 
 ```text
 .anum4
-   ↓
-проверка четырёх допустимых знаков
-   ↓
-поток [ ] 1 0
-   ↓
-машина anum-v0.4
+  -> strict validation
+  -> exact [ ] 1 0 sequence
+  -> @mts/core.executeAbits
 ```
 
-### 3.2. Существующая связь-носитель
+### 6.2. Existing carrier
 
-`.aset.json` может быть прочитана в отдельном режиме, если в ней явно выбрана связь:
+`.aset.json` может быть явно прочитана через:
 
 ```text
 provenance.representations.carrier
 ```
 
-Выбранная связь разворачивается только для чтения по истории полюсов `start` до `R`:
+Лаборатория read-only разворачивает start-историю до `R`, получает `O/C/L/U`, восстанавливает `[ ] 1 0` и затем запускает **тот же** accepted runtime.
 
 ```text
-carrier = prefixN
-prefixN   = prefixN-1 ⟼ valueN
-...
-prefix1   = R ⟼ value1
+existing aset
+  -> selected carrier
+  -> read-only start history
+  -> O/C/L/U
+  -> [ ] 1 0
+  -> @mts/core.executeAbits
 ```
 
-Полученные `value` обязаны быть только `O/C/L/U`. Они переводятся обратно в `[ ] 1 0`, после чего запускается **та же** машина `anum-v0.4`:
+Исходная асеть не изменяется.
+
+Transport provenance использует:
 
 ```text
-существующая асеть
-   ↓
-явно выбранная связь-носитель
-   ↓
-конечная история начала до R
-   ↓
-O/C/L/U
-   ↓
-[ ] 1 0
-   ↓
-машина anum-v0.4
+decodedBeforeAcceptedRuntime = true
 ```
 
-Исходная асеть при таком чтении не изменяется. Второго алгоритма скобок для связи-носителя нет.
+а не старое `decodedBeforeStackMachine`.
 
-## 4. Принятая стековая машина `anum-v0.4`
+## 7. Как строится accepted trace
 
-Состояние машины — стек контекстов. Каждый контекст хранит:
+`@mts/core.executeAbits` возвращает authoritative operation sequence и вызывает `algebra.link(start,end)` для semantic pair construction.
 
-- список уже полученных значений;
-- текущую связь `current`;
-- признак, было ли получено хотя бы одно значение.
-
-Переходы:
+Локальная instrumented algebra записывает эти события:
 
 ```text
-OPEN  '[':
-    сохранить внешний контекст
-    открыть новый пустой контекст от R
-
-VALUE '1':
-    добавить L
-
-VALUE '0':
-    добавить U
-
-CLOSE ']':
-    если контекст пуст -> вернуть R
-    иначе -> вернуть R ⟼ current
-    передать полученное значение родительскому контексту
+source index
+start
+end
+returned local ref
+created/reused
 ```
 
-Добавление второго и следующих значений в одном контексте выполняется левой свёрткой:
+После исполнения `projectAcceptedTrace` восстанавливает debugger-friendly frames и проверяет:
 
 ```text
-v1, v2, v3
--> (v1 ⟼ v2) ⟼ v3
+projected final result == upstream denotation
 ```
 
-Канонические контрольные примеры:
+Если projection расходится с upstream, accepted execution fail-closed.
 
-```text
-ε      -> R
-[]     -> R
-1      -> L
-10     -> L ⟼ U
-[1]    -> R ⟼ L
-[[]]   -> R
-1110   -> ((L ⟼ L) ⟼ L) ⟼ U
-```
+Следовательно trace — наблюдаемая проекция, а не второй interpreter.
 
-## 5. Экспериментальные алгоритмы
+## 8. Experimental algorithms
 
-Реестр десериализаторов хранит статус каждого алгоритма.
+Текущие локальные эксперименты:
 
-Текущие варианты:
+- `stack-group-value-v0` — historical alternative CLOSE behavior;
+- `abit-flat-v0` — flat fold;
+- `string-flat-v0` — string experiment.
 
-- `anum-v0.4` — статус `accepted` для четверичного потока и существующей связи-носителя;
-- `stack-group-value-v0` — статус `experimental`: при `CLOSE` возвращает внутреннее значение без `R ⟼ value`;
-- `abit-flat-v0` — статус `experimental`: плоская левая свёртка четырёх корневых абитов без стековой семантики;
-- `string-flat-v0` — статус `experimental`: строковый словарный эксперимент.
+Они обязаны иметь `status=experimental` и не получают `semanticAuthority` provenance accepted runtime.
 
-Старого отдельного `stack-root-wrap-v0` нет: его смысл стал принятой семантикой `anum-v0.4`, поэтому слой совместимости не сохраняется.
+Наличие экспериментального алгоритма не изменяет МТС и не означает candidate acceptance.
 
-## 6. Различаемые представления
+## 9. `.aset.json` как presentation format
 
-Лаборатория не смешивает следующие уровни:
-
-1. физическую последовательность символов;
-2. последовательность абитов;
-3. смысловую связь МТС;
-4. упорядоченную последовательность ссылок на связи;
-5. акорневую связь-последовательность, играющую роль носителя;
-6. связь, играющую роль хранения соответствия носителя и денотата;
-7. денотат конкретной десериализации.
-
-Например повтор:
-
-```text
-1110
-```
-
-разрешается в позиции:
-
-```text
-[L, L, L, U]
-```
-
-Три позиции `L` не означают три смысловые связи `L`.
-
-## 7. `.aset.json`
-
-Формат асети хранит каноническую сеть и служебные представления:
+Файл хранит:
 
 ```text
 links
@@ -207,7 +241,7 @@ storedAnums
 provenance
 ```
 
-`links` — единственная топологическая поверхность смысловых связей. Остальные поля описывают роли, последовательности и происхождение, но не создают новую разновидность связи.
+`links` отображает локально материализованную topology projection. Technical `id` — address внутри файла, а не semantic Link identity.
 
 Поле:
 
@@ -215,96 +249,158 @@ provenance
 identity = by-poles
 ```
 
-фиксирует основной инвариант файла.
+фиксирует canonical equality boundary.
 
-## 8. Пошаговый отладчик
+## 10. Accepted semantic provenance
 
-Пошаговый режим реализован и является частью основной лаборатории. Для выбранного шага показываются:
+Accepted result содержит:
 
-- позиция физического источника;
-- текущий знак;
-- разрешённая корневая связь;
-- глубина и вершина стека;
-- все кадры стека и их значения;
-- `current`;
-- связи, материализованные именно на этом шаге;
-- связи, найденные и переиспользованные по тождеству полюсов.
+```text
+provenance.status = accepted
+provenance.deserializer = anum-v0.4
+provenance.semanticAuthority.kind = exact-generated-package
+```
 
-Граф синхронизирован с выбранным состоянием машины:
+и exact identity:
 
-- будущие связи скрыты;
-- новая связь выделяется зелёным;
-- переиспользованная — голубым пунктиром;
-- `current` — жёлтым.
+```text
+package
+version
+contract
+conformance
+upstreamRepository
+upstreamCommit
+artifactSha256
+generatedTreeSha256
+consumerLock
+```
 
-Для `[10]` это означает два разных акта построения:
+Это делает machine-visible различие между:
 
-1. на `0` появляется `L ⟼ U`;
-2. на закрывающей скобке появляется `R ⟼ (L ⟼ U)`.
+```text
+accepted upstream semantics
+local presentation projection
+experimental local semantics
+```
 
-Связь второго шага не должна быть видна на первом.
+## 11. Пошаговый debugger и визуализация
 
-## 9. Визуализация связи
+Debugger показывает:
 
-Связь `X = A ⟼ B` показывается как центральный узел связи и две роли полюсов:
+- source position;
+- текущий token;
+- resolved root ref;
+- projected frames/current;
+- produced/reused links;
+- visible links на данном шаге.
+
+Новая связь становится видимой только после соответствующего upstream semantic `link(start,end)` event.
+
+Визуализация связи `X = A ⟼ B`:
 
 ```text
 A -> X -> B
 ```
 
-Начало визуально входит в связь и отмечается крестиком; конец выходит из связи и отмечается стрелкой. Эта проекция интерфейса не меняет топологию самой асети.
+является UI projection и не меняет semantic identity.
 
-Граф поддерживает несколько раскладок, масштабирование, перемещение фона и ручное перемещение связей.
-
-## 10. Сериализация и обратимость
-
-Сериализатор выбирается отдельно от десериализатора.
-
-Текущие сериализаторы:
-
-- `aset-json-v0` — сохранить каноническую `.aset.json`;
-- `source-replay-v0` — точно вернуть исходный `.anum4` или `.anums`, только если это подтверждает `provenance.source`;
-- `source-envelope-v0` — сохранить физический источник в `.anum.json`.
-
-Наличие произвольной асети само по себе не доказывает возможность однозначно восстановить исходное ачисло.
-
-Полезно различать три обещания:
-
-```text
-точное восстановление источника
-восстановление топологии
-смысловая эквивалентность
-```
-
-Они не считаются равными автоматически.
-
-## 11. Граница чтения и материализации
+## 12. READ / materialization boundary
 
 Для лаборатории принципиально:
 
 ```text
-найти / проверить != записать / материализовать
+найти / проверить != записать / materialize
 не найдено != не существует
 ```
 
-Тождество по полюсам означает однозначность смысловой связи, но не означает, что её запись уже присутствует в конкретной асети.
+Existing-carrier read — read-only operation над входной асетью. Result projection строится отдельно.
 
-Чтение существующей связи-носителя — операция только для чтения. Новая асеть результата строится отдельно для наблюдаемого исполнения машины.
+## 13. CI evidence
 
-## 12. GitHub Pages
+CI имеет две независимые поверхности.
 
-Приложение полностью статическое:
+### Runtime/test job
+
+Перед `node --test` exact runtime materialized из lock. Все обычные tests импортируют accepted deserializer уже через generated `@mts/core`.
+
+### Consumer/differential job
+
+Отдельно:
 
 ```text
-index.html
-styles.css
-src/*.js
+exact source rebuild
+npm pack
+artifact SHA256
+package-root smoke
+deep-import rejection
+local baseline vs accepted v0.10 differential
 ```
 
-После слияния в `main` GitHub Pages публикует новую версию автоматически.
+Differential evidence покрывает все accepted `.anum4` cases из `examples/cases.json` и stack failure classes.
 
-## 13. Граница с `anum_docs`
+## 14. GitHub Pages
 
-`anum_docs` определяет принятую теоретическую и контрактную поверхность. `anum_parser` предоставляет наблюдаемую реализацию, тестовый корпус и экспериментальные альтернативы.
+Pages workflow также materializes exact runtime перед публикацией и копирует в `_site`:
 
-Для принятого `anum-v0.4` лаборатория должна сохранять соответствие контрольным векторам и dual-input принципу: оба транспорта сходятся **до** единственной стековой машины.
+```text
+src/
+examples/
+docs/
+generated/
+package.json
+```
+
+Таким образом browser site и CI используют один и тот же consumer lock.
+
+## 15. Граница с MTS v0.11
+
+На текущем observed upstream v0.11 остаётся:
+
+```text
+status = candidate
+accepted = false
+acceptanceReady = false
+candidateRuntimeSelectable = false
+```
+
+Поэтому `anum_parser` не должен:
+
+- переключать production на moving `anum_docs/main`;
+- локально реализовывать новый accepted-like interpreter для `TopBind(R,S)`;
+- объявлять top-level `.` принятой current semantics;
+- расширять Q;
+- выдавать candidate research/runtime evidence за accepted release.
+
+Пока candidate не accepted, правильная consumer стратегия — ждать upstream lifecycle.
+
+После acceptance требуется отдельный explicit transition:
+
+```text
+new exact source SHA
+new accepted contract/conformance
+new package version/artifact digest
+new consumer lock
+new differential proof
+new runtime/Pages evidence
+```
+
+## 16. Граница с `anum_docs`
+
+`anum_docs` владеет MTS contracts, accepted runtime и release lifecycle.
+
+`anum_parser` владеет:
+
+```text
+strict laboratory file boundaries
+transport adapters
+presentation Aset format
+trace/debugger/visualizer
+experimental comparisons
+consumer verification
+```
+
+Главный архитектурный результат синхронизации:
+
+```text
+anum_parser no longer defines current MTS semantics locally
+```
