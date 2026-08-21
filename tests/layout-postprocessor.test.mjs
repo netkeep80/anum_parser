@@ -243,10 +243,13 @@ test("integration: полный postprocess запускается после la
   const source = await readFile(new URL("../src/visualizer.js", import.meta.url), "utf8");
 
   assert.match(source, /cy\.on\("layoutstop", postprocessLayout\)/);
-  assert.match(source, /const result = optimizeAsetLayoutPositions\(aset, positions\)/);
+  assert.match(source, /rooted\s*\?\s*optimizeRootedAsetLayoutPositions\(aset, positions\)\s*:\s*optimizeAsetLayoutPositions\(aset, positions\)/);
 
   const positionHandler = source.match(/cy\.on\("position", "node", \(\) => \{([\s\S]*?)\}\);/);
   assert.ok(positionHandler, "position handler должен существовать");
   assert.match(positionHandler[1], /alignArcs\(\)/);
-  assert.doesNotMatch(positionHandler[1], /optimizeAsetLayoutPositions|postprocessLayout/);
+  assert.doesNotMatch(
+    positionHandler[1],
+    /optimizeAsetLayoutPositions|optimizeRootedAsetLayoutPositions|postprocessLayout/,
+  );
 });

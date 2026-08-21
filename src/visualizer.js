@@ -3,6 +3,8 @@ import {
   sampleCubicBezier,
   sampleQuadraticBezier,
 } from "./layout-postprocessor.js";
+import { buildRootedStructuralLayout } from "./rooted-layout.js";
+import { minimizeRootedArcCrossings } from "./rooted-crossing.js";
 
 const graphStates = new WeakMap();
 const ARC_TANGENT_LENGTH = 26;
@@ -12,7 +14,9 @@ const END_LOOP_SWEEP_DEG = 65;
 const SELF_LOOP_NODE_RADIUS = 24;
 const SELF_LOOP_CONTROL_RADIUS = 54;
 
+export const ROOTED_LAYOUT_ID = "rooted";
 export const GRAPH_LAYOUTS = Object.freeze([
+  { id: ROOTED_LAYOUT_ID, title: "От акорня" },
   { id: "cose", title: "CoSE" },
   { id: "breadthfirst", title: "Дерево" },
   { id: "circle", title: "Круг" },
@@ -89,10 +93,7 @@ export function graphElementsForRendering(aset, limit = 300) {
   });
 }
 
-// Строит две контрольные точки рядом с центром связи так, чтобы лучи,
-// уходящие от центра к start- и end-дуге, были строго антипараллельны.
-// Это геометрический инвариант представления и не меняет семантическую
-// ориентацию startPole -> link -> endPole.
+// Две GREEN-касательные одной связи в её центре всегда антипараллельны.
 export function pairedArcControlGeometry(center, startPole, endPole, tangentLength = ARC_TANGENT_LENGTH) {
   const startVector = subtract(startPole, center);
   const endVector = subtract(endPole, center);
@@ -120,19 +121,12 @@ export function pairedArcControlGeometry(center, startPole, endPole, tangentLeng
   };
 }
 
-// Cytoscape задаёт loop-direction от 12 часов по часовой стрелке.
-// Экранный вектор использует +X вправо и +Y вниз, поэтому обычный atan2
-// нельзя передавать в loop-direction напрямую.
 export function cytoscapeLoopAngleForScreenVector(vector) {
   const unit = normalize(vector);
   if (!unit) return 0;
   return normalizeDegrees(Math.atan2(unit.x, -unit.y) * 180 / Math.PI);
 }
 
-// loop-direction — биссектриса self-loop, а loop-sweep — угол между
-// leaving/returning лучами. Для start-loop GREEN находится на target,
-// для end-loop GREEN находится на source. Возвращаем direction так,
-// чтобы именно GREEN-луч совпал с заданной outward-касательной.
 export function semanticLoopGeometry(outward, semanticEndpoint, sweepDegrees) {
   if (semanticEndpoint !== "source" && semanticEndpoint !== "target") {
     throw new Error(`Неизвестный semantic endpoint self-loop: ${semanticEndpoint}`);
@@ -160,8 +154,6 @@ export function semanticLoopRayAngle(loopDirection, semanticEndpoint, sweepDegre
     : normalizeDegrees(loopDirection + halfSweep);
 }
 
-// Если один полюс самозамкнут, сначала фиксируем точную касательную
-// обычной соседней дуги T, а GREEN-касательную петли делаем равной -T.
 export function singleSelfLoopGeometry(center, companionPole, selfRole, tangentLength = ARC_TANGENT_LENGTH) {
   if (selfRole !== "start" && selfRole !== "end") {
     throw new Error(`Неизвестная роль self-loop: ${selfRole}`);
@@ -188,8 +180,6 @@ export function singleSelfLoopGeometry(center, companionPole, selfRole, tangentL
   };
 }
 
-// Для полной рекурсии обе дуги являются self-loop. Выбираем горизонтальную
-// пару GREEN-лучей и сохраняем тот же строгий 180°-инвариант.
 export function doubleSelfLoopGeometry() {
   const startOutward = { x: -1, y: 0 };
   const endOutward = { x: 1, y: 0 };
@@ -201,8 +191,8 @@ export function doubleSelfLoopGeometry() {
   };
 }
 
-// Строит полилинейное приближение именно тех RGB-дуг, которые видит пользователь.
-// Оно используется только layout-постпроцессором и не является семантической моделью.
+// Полилинейное приближение именно отображаемых RGB-дуг. Это геометрия UI,
+// а не дополнительная семантическая реализация МТС.
 export function graphArcPaths(aset, positions, limit = 300, samples = 6) {
   if (!aset?.links?.length) return [];
   const links = aset.links.slice(0, limit);
@@ -287,12 +277,7 @@ export function graphArcPaths(aset, positions, limit = 300, samples = 6) {
 }
 
 export function optimizeAsetLayoutPositions(aset, positions, options = {}) {
-  const visibleCount = Math.min(aset?.links?.length ?? 0, 300);
-  const profile = visibleCount > 160
-    ? { samples: 3, maxPasses: 2, maxHotNodes: 6, maxEvaluations: 48 }
-    : visibleCount > 80
-      ? { samples: 4, maxPasses: 3, maxHotNodes: 8, maxEvaluations: 110 }
-      : { samples: 6, maxPasses: 4, maxHotNodes: 10, maxEvaluations: 220 };
+  const profile = optimizationProfile(Math.min(aset?.links?.length ?? 0, 300));
   const samples = options.samples ?? profile.samples;
 
   return minimizeArcCrossings({
@@ -306,6 +291,40 @@ export function optimizeAsetLayoutPositions(aset, positions, options = {}) {
   });
 }
 
+// Основной layout асети: depth определяет радиус, crossing minimizer — угол.
+export function optimizeRootedAsetLayoutPositions(aset, seedPositions, options = {}) {
+  const profile = optimizationProfile(Math.min(aset?.links?.length ?? 0, 300));
+  const samples = options.samples ?? profile.samples;
+  const structural = buildRootedStructuralLayout(aset, seedPositions, {
+    layerSpacing: options.layerSpacing ?? 96,
+    minimumNodeSpacing: options.minimumNodeSpacing ?? 58,
+  });
+  const optimized = minimizeRootedArcCrossings({
+    positions: structural.positions,
+    center: structural.center,
+    projectPosition: structural.projectPosition,
+    buildPaths: (candidate) => graphArcPaths(aset, candidate, 300, samples),
+    fixedIds: [aset?.root].filter(Boolean),
+    maxPasses: options.maxPasses ?? profile.maxPasses,
+    maxHotNodes: options.maxHotNodes ?? Math.max(profile.maxHotNodes, 10),
+    maxEvaluations: options.maxEvaluations ?? Math.max(profile.maxEvaluations, 160),
+    minimumSpacing: options.minimumNodeSpacing ?? 44,
+  });
+
+  const visibleDepths = Object.keys(optimized.positions)
+    .map((id) => structural.depths[id])
+    .filter(Number.isInteger);
+  return {
+    ...optimized,
+    changed: positionsDiffer(seedPositions, optimized.positions),
+    center: structural.center,
+    depths: structural.depths,
+    radii: structural.radii,
+    layerSpacing: structural.layerSpacing,
+    maxDepth: visibleDepths.length > 0 ? Math.max(...visibleDepths) : 0,
+  };
+}
+
 export function renderAset(container, aset, options = {}) {
   destroyGraph(container);
   if (!aset?.links?.length) {
@@ -314,7 +333,7 @@ export function renderAset(container, aset, options = {}) {
   }
 
   const cytoscape = requireCytoscape();
-  const layoutId = options.layout ?? container.dataset.layout ?? "cose";
+  const layoutId = options.layout ?? container.dataset.layout ?? ROOTED_LAYOUT_ID;
   container.dataset.layout = layoutId;
   const elements = graphElementsForRendering(aset);
   const cy = cytoscape({
@@ -343,14 +362,28 @@ export function renderAset(container, aset, options = {}) {
       return;
     }
 
-    const result = optimizeAsetLayoutPositions(aset, positions);
+    const activeLayoutId = container.dataset.layout ?? ROOTED_LAYOUT_ID;
+    const rooted = activeLayoutId === ROOTED_LAYOUT_ID;
+    const result = rooted
+      ? optimizeRootedAsetLayoutPositions(aset, positions)
+      : optimizeAsetLayoutPositions(aset, positions);
+
     applyingPostprocess = true;
     try {
       if (result.changed) applyCyPositions(cy, result.positions);
+      if (rooted) applyStructuralDepthData(cy, result.depths);
       alignArcs();
       lastPostprocessedSignature = positionSignature(result.positions);
       container.dataset.crossingsBefore = String(result.crossingsBefore);
       container.dataset.crossingsAfter = String(result.crossingsAfter);
+      if (rooted) {
+        container.dataset.structuralMaxDepth = String(result.maxDepth);
+        container.dataset.structuralLayerSpacing = result.layerSpacing.toFixed(3);
+        cy.fit(undefined, 46);
+      } else {
+        delete container.dataset.structuralMaxDepth;
+        delete container.dataset.structuralLayerSpacing;
+      }
     } finally {
       applyingPostprocess = false;
     }
@@ -510,11 +543,35 @@ function applyCyPositions(cy, positions) {
   });
 }
 
+function applyStructuralDepthData(cy, depths) {
+  cy.batch(() => {
+    cy.nodes().forEach((node) => {
+      const depth = depths?.[node.id()];
+      if (Number.isInteger(depth)) node.data("structuralDepth", depth);
+    });
+  });
+}
+
 function positionSignature(positions) {
   return Object.keys(positions).sort().map((id) => {
     const position = positions[id];
     return `${id}:${position.x.toFixed(3)},${position.y.toFixed(3)}`;
   }).join("|");
+}
+
+function positionsDiffer(left, right) {
+  const leftIds = Object.keys(left ?? {}).sort();
+  const rightIds = Object.keys(right ?? {}).sort();
+  if (leftIds.length !== rightIds.length) return true;
+  for (let index = 0; index < leftIds.length; index += 1) {
+    if (leftIds[index] !== rightIds[index]) return true;
+    const leftPoint = left[leftIds[index]];
+    const rightPoint = right[rightIds[index]];
+    if (!rightPoint || Math.hypot(leftPoint.x - rightPoint.x, leftPoint.y - rightPoint.y) > GEOMETRY_EPSILON) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function applyLoopGeometry(edge, geometry) {
@@ -577,8 +634,28 @@ function requireCytoscape() {
   return globalThis.cytoscape;
 }
 
+function optimizationProfile(visibleCount) {
+  return visibleCount > 160
+    ? { samples: 3, maxPasses: 2, maxHotNodes: 6, maxEvaluations: 48 }
+    : visibleCount > 80
+      ? { samples: 4, maxPasses: 3, maxHotNodes: 8, maxEvaluations: 110 }
+      : { samples: 6, maxPasses: 4, maxHotNodes: 10, maxEvaluations: 220 };
+}
+
 function layoutOptions(layoutId) {
   switch (layoutId) {
+    case ROOTED_LAYOUT_ID:
+      // Deterministic seed only. Structural radii are assigned after layoutstop.
+      return {
+        name: "concentric",
+        avoidOverlap: true,
+        minNodeSpacing: 40,
+        padding: 46,
+        concentric: (node) => node.data("root") === "yes" ? 1000 : 0,
+        levelWidth: () => 1,
+        animate: false,
+        fit: true,
+      };
     case "breadthfirst":
       return {
         name: "breadthfirst",
@@ -600,6 +677,7 @@ function layoutOptions(layoutId) {
         concentric: (node) => node.data("root") === "yes" ? 1000 : node.degree(),
         levelWidth: () => 2,
       };
+    case "cose":
     default:
       return {
         name: "cose",
