@@ -8,6 +8,12 @@ import {
   setGraphDebugState,
 } from "../src/visualizer.js";
 
+function styleFor(selector) {
+  const rule = graphStyle().find((item) => item.selector === selector);
+  assert.ok(rule, `style rule ${selector} must exist`);
+  return rule.style;
+}
+
 test("visualizer экспортирует API пошагового debugger", () => {
   assert.equal(typeof setGraphDebugState, "function");
 });
@@ -37,6 +43,25 @@ test("stylesheet содержит состояния hidden/created/reused/curre
   assert.ok(selectors.has("node.debug-reused"));
   assert.ok(selectors.has("edge.debug-reused"));
   assert.ok(selectors.has("node.debug-current"));
+});
+
+test("debugger edge states не перетирают RGB-семантику полюсов", () => {
+  const produced = styleFor("edge.debug-produced");
+  const reused = styleFor("edge.debug-reused");
+
+  for (const style of [produced, reused]) {
+    assert.equal(style["line-fill"], undefined);
+    assert.equal(style["line-color"], undefined);
+    assert.equal(style["target-arrow-color"], undefined);
+  }
+
+  assert.equal(produced.width, 4);
+  assert.equal(reused.width, 4);
+  assert.equal(reused["line-style"], "dashed");
+
+  assert.equal(styleFor('edge[role = "start"]')["line-gradient-stop-colors"], "#ff657a #67e8b3");
+  assert.equal(styleFor('edge[role = "end"]')["line-gradient-stop-colors"], "#67e8b3 #73a7ff");
+  assert.equal(styleFor('edge[role = "end"]')["target-arrow-color"], "#73a7ff");
 });
 
 test("debugger расположен слева от графа в полноширинном адаптивном workspace", () => {
