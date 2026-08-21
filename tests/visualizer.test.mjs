@@ -170,6 +170,9 @@ test("double self-loop имеет две антиподальные GREEN-кас
   const geometry = doubleSelfLoopGeometry();
 
   assertOpposite(geometry.startOutward, geometry.endOutward);
+  assert.equal(geometry.startLoop.semanticEndpoint, "target");
+  assert.equal(geometry.endLoop.semanticEndpoint, "source");
+  assertSameAngle(geometry.startLoop.loopDirection, geometry.endLoop.loopDirection + 180);
   assertSameAngle(
     semanticLoopRayAngle(
       geometry.startLoop.loopDirection,
