@@ -468,9 +468,6 @@ export function graphStyle() {
     {
       selector: "edge.debug-produced",
       style: {
-        "line-fill": "solid",
-        "line-color": "#67e8b3",
-        "target-arrow-color": "#67e8b3",
         width: 4,
       },
     },
@@ -485,9 +482,6 @@ export function graphStyle() {
     {
       selector: "edge.debug-reused",
       style: {
-        "line-fill": "solid",
-        "line-color": "#6bdcff",
-        "target-arrow-color": "#6bdcff",
         "line-style": "dashed",
         width: 4,
       },
