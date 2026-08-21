@@ -45,7 +45,7 @@ test("existing carrier восстанавливает точный четвер�
   }
 });
 
-test("raw и existing carrier сходятся до одной stack machine и одного денотата", () => {
+test("raw и existing carrier сходятся до одного accepted runtime и одного денотата", () => {
   const raw = accepted("[10]");
   const imported = parseArtifact(JSON.stringify(raw.aset), "aset-carrier");
   const before = JSON.stringify(imported);
@@ -65,7 +65,7 @@ test("raw и existing carrier сходятся до одной stack machine и 
     kind: "existing-carrier",
     carrierRef: raw.carrier,
     readOnly: true,
-    decodedBeforeStackMachine: true,
+    decodedBeforeAcceptedRuntime: true,
     sourceAset: "mts-aset/0.2",
     prefixCount: raw.aset.abitSequences[0].refs.length + 1,
   });
