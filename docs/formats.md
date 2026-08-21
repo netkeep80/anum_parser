@@ -1,6 +1,10 @@
 # Форматы файлов лаборатории
 
-Этот документ описывает текущие файловые границы `anum_parser`. Теоретическая норма МТС находится в `anum_docs`; лаборатория обязана явно отмечать принятые и экспериментальные алгоритмы.
+Этот документ описывает текущие файловые границы `anum_parser`.
+
+Теоретическая норма МТС находится в `anum_docs`. Для accepted четверичного исполнения лаборатория использует exact-pinned `@mts/core@0.10.0` / MTS v0.10 из `contracts/mts-core-consumer-lock.json`.
+
+Лабораторный id `anum-v0.4` — стабильный id десериализатора и не является номером текущего MTS release.
 
 ## 1. Четверичный источник `.anum4`
 
@@ -20,10 +24,19 @@
 - пустой файл разрешён;
 - физическая последовательность символов и последовательность ссылок на абиты остаются разными представлениями.
 
-Текущий принятый десериализатор:
+Строгий `.anum4` parser — presentation boundary `anum_parser`. После проверки exact sequence передаётся в accepted `@mts/core.executeAbits`.
+
+Текущий accepted laboratory deserializer id:
 
 ```text
 anum-v0.4
+```
+
+Semantic authority:
+
+```text
+MTS v0.10
+@mts/core@0.10.0
 ```
 
 Контрольные примеры:
@@ -49,7 +62,7 @@ anum-v0.4
 - пустая строка разрешена;
 - символы строки не считаются четверичными абитами автоматически.
 
-Строковая десериализация пока имеет экспериментальный статус.
+Строковая десериализация имеет experimental status и не наследует accepted `@mts/core` authority автоматически.
 
 ## 3. Контейнер `.anum.json`
 
@@ -77,11 +90,11 @@ anum-v0.4
 }
 ```
 
-Контейнер хранит источник. Алгоритм десериализации выбирается отдельно.
+Контейнер хранит source. Алгоритм и его semantic authority выбираются отдельно.
 
 ## 4. Асеть `.aset.json`
 
-Текущая версия лабораторной асети:
+Текущая версия laboratory Aset format:
 
 ```text
 mts-aset/0.2
@@ -128,7 +141,7 @@ A = C ∧ B = D
 }
 ```
 
-Технический `id` — адрес записи внутри конкретного файла. Он не является дополнительной смысловой характеристикой связи.
+Технический `id` — address записи внутри конкретного файла. Он не является дополнительной смысловой характеристикой связи.
 
 ## 5. Корневой базис
 
@@ -164,7 +177,7 @@ U = C ⟼ O
 
 ## 6. `links`
 
-Каждая смысловая связь записывается как:
+Каждая materialized presentation link записывается как:
 
 ```json
 {"id":"L42", "start":"L10", "end":"L11"}
@@ -181,7 +194,9 @@ U = C ⟼ O
 
 потому что по МТС это одна связь.
 
-`labels` и `tags` — служебные метаданные. Они не меняют тождество связи.
+`labels` и `tags` — служебные metadata и не меняют semantic identity.
+
+В accepted runtime локальный `AsetBuilder` materializes только пары, запрошенные `@mts/core` через `algebra.link(start,end)`.
 
 ## 7. Последовательности
 
@@ -233,7 +248,7 @@ prefix2 = prefix1 ⟼ value2
 prefix3 = prefix2 ⟼ value3
 ```
 
-Файл может сохранять удобное представление роли:
+Файл может сохранять удобное presentation представление роли:
 
 ```json
 {
@@ -245,11 +260,11 @@ prefix3 = prefix2 ⟼ value3
 
 Каждый шаг канонизируется. Уже существующая связь переиспользуется.
 
-Поле `items` удобно для интерфейса, но принятый режим чтения существующего носителя не обязан ему доверять: последовательность восстанавливается из самой истории полюсов `start` выбранной связи.
+Поле `items` удобно для UI, но accepted existing-carrier path не обязан ему доверять: последовательность восстанавливается из start-истории выбранной связи.
 
 ## 9. Явно выбранная связь-носитель
 
-Для чтения существующей асети через `anum-v0.4` должна быть явно отмечена связь:
+Для чтения существующей асети через accepted `anum-v0.4` должна быть явно отмечена связь:
 
 ```json
 {
@@ -268,15 +283,15 @@ prefix3 = prefix2 ⟼ value3
 3. собирает конечные полюса в прямом порядке;
 4. требует, чтобы каждый из них был `O`, `C`, `L` или `U`;
 5. переводит их в `[ ] 1 0`;
-6. запускает ту же машину `anum-v0.4`.
+6. передаёт exact sequence в тот же `@mts/core.executeAbits`.
 
-Это операция только для чтения. Исходная асеть не изменяется.
+Это read-only операция над входной асетью.
 
-Отдельного алгоритма скобок для связи-носителя нет.
+Отдельного accepted алгоритма скобок для связи-носителя нет.
 
 ## 10. `storedAnums`
 
-Роль хранения может связывать носитель с денотатом:
+Роль хранения может связывать carrier с denotation:
 
 ```json
 {
@@ -297,7 +312,9 @@ carrier ⟼ denotation
 
 ## 11. `provenance`
 
-Для результата четверичной десериализации текущая форма включает источник, алгоритм, статус и ключевые представления:
+Для accepted четверичного результата provenance содержит source, laboratory deserializer id, status, exact semantic authority и presentation representations.
+
+Пример формы:
 
 ```json
 {
@@ -309,6 +326,18 @@ carrier ⟼ denotation
   "deserializer": "anum-v0.4",
   "status": "accepted",
   "traceVersion": "0.3",
+  "semanticAuthority": {
+    "kind": "exact-generated-package",
+    "package": "@mts/core",
+    "version": "0.10.0",
+    "contract": "mts-contract/v0.10",
+    "conformance": "mts-conformance/v0.10",
+    "upstreamRepository": "netkeep80/anum_docs",
+    "upstreamCommit": "957c818d82bd3211f2a59547fff28e8ed0ec4331",
+    "artifactSha256": "0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007",
+    "generatedTreeSha256": "<64 hex>",
+    "consumerLock": "anum-parser-mts-core-consumer-lock/v0.1"
+  },
   "representations": {
     "sourceSequence": "source:0",
     "abitSequence": "abits:0",
@@ -319,7 +348,11 @@ carrier ⟼ denotation
 }
 ```
 
-Если результат получен чтением существующей связи-носителя, дополнительно фиксируется транспорт:
+`semanticAuthority` относится только к accepted path. Experimental algorithms не должны копировать этот claim.
+
+`generatedTreeSha256` идентифицирует materialized compiled tree, полученный после exact artifact verification; он не заменяет upstream commit/contract/artifact identity.
+
+Если result получен чтением existing carrier, дополнительно фиксируется transport:
 
 ```json
 {
@@ -327,12 +360,22 @@ carrier ⟼ denotation
     "kind": "existing-carrier",
     "carrierRef": "RC4",
     "readOnly": true,
-    "decodedBeforeStackMachine": true
+    "decodedBeforeAcceptedRuntime": true,
+    "sourceAset": "mts-aset/0.2",
+    "prefixCount": 5
   }
 }
 ```
 
-Эти поля описывают происхождение и роль. Они не входят в тождество смысловой связи.
+Старое поле:
+
+```text
+decodedBeforeStackMachine
+```
+
+больше не описывает current architecture и не должно использоваться для новых accepted результатов.
+
+Эти provenance fields описывают происхождение, authority и presentation roles. Они не входят в semantic identity самой связи.
 
 ## 12. Два режима `.aset.json` в веб-лаборатории
 
@@ -343,9 +386,9 @@ carrier ⟼ denotation
 .aset.json — прочитать carrier через ANUM v0.4
 ```
 
-Первый режим только показывает существующую асеть.
+Первый режим только показывает existing Aset.
 
-Второй режим использует явно отмеченную связь-носитель как вход принятой десериализации и строит отдельную асеть результата для пошагового наблюдения.
+Второй режим использует selected carrier как transport, восстанавливает `[ ]10` и исполняет exact accepted `@mts/core` runtime, строя отдельную result projection.
 
 ## 13. Сериализация
 
@@ -353,23 +396,23 @@ carrier ⟼ denotation
 
 - `aset-json-v0` — сохранить `.aset.json`;
 - `source-replay-v0` — точно вернуть исходный `.anum4` или `.anums`, если это подтверждает `provenance.source`;
-- `source-envelope-v0` — сохранить тот же источник в `.anum.json`.
+- `source-envelope-v0` — сохранить тот же source в `.anum.json`.
 
 Наличие произвольной асети не означает, что из неё можно однозначно восстановить исходное ачисло.
 
 Следует различать:
 
 ```text
-точное восстановление источника
-восстановление топологии
-смысловую эквивалентность
+точное восстановление source
+восстановление topology
+semantic equivalence
 ```
 
-## 14. Ошибки формата и транспорта
+## 14. Ошибки формата, transport и accepted execution
 
-Форматная граница не исправляет вход молча.
+Format boundary не исправляет вход молча.
 
-Основные коды:
+Основные local codes:
 
 ```text
 invalid-utf8
@@ -390,16 +433,39 @@ not-rooted-sequence
 non-abit
 ```
 
+Accepted `@mts/core` stream failures `unexpected-close` и `unclosed-open` адаптируются к laboratory `algorithm-undefined-transition` с сохранением transition class.
+
 ## 15. Версионирование
 
 Версия файлового формата меняется, когда меняется структура или фундаментальное обещание самого файла.
 
-Изменение алгоритма десериализации не требует автоматически менять `.anum4`: алгоритм имеет собственный `id` и статус.
+Изменение MTS release не требует автоматически менять `.anum4`: physical alphabet и laboratory deserializer id версионируются отдельно от semantic authority.
 
-Текущая принятая четверичная машина называется:
+Текущий accepted laboratory id:
 
 ```text
 anum-v0.4
 ```
 
-Эксперимент `stack-group-value-v0` остаётся отдельным алгоритмом сравнения и не изменяет смысл принятого v0.4.
+Текущий semantic authority:
+
+```text
+MTS v0.10 / @mts/core@0.10.0
+```
+
+Следующий MTS release должен переключаться только через explicit consumer repin.
+
+## 16. MTS v0.11 candidate boundary
+
+На текущем observed `anum_docs` v0.11 остаётся candidate / NOT ACCEPTED:
+
+```text
+status = candidate
+accepted = false
+acceptanceReady = false
+candidateRuntimeSelectable = false
+```
+
+Поэтому current file formats не объявляют top-level `.`/`TopBind` принятой `anum_parser` semantics и Q остаётся ровно `[ ] 1 0`.
+
+После official upstream acceptance требуется отдельный migration slice с новым lock, package/artifact identity и executable evidence. До этого candidate не является production authority лаборатории.
