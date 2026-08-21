@@ -1,6 +1,8 @@
 const graphStates = new WeakMap();
 const ARC_TANGENT_LENGTH = 26;
 const GEOMETRY_EPSILON = 1e-9;
+const START_LOOP_SWEEP_DEG = -65;
+const END_LOOP_SWEEP_DEG = 65;
 
 export const GRAPH_LAYOUTS = Object.freeze([
   { id: "cose", title: "CoSE" },
@@ -107,6 +109,87 @@ export function pairedArcControlGeometry(center, startPole, endPole, tangentLeng
     outwardEnd,
     startStyle: bezierControlStyle(startPole, center, startControl),
     endStyle: bezierControlStyle(center, endPole, endControl),
+  };
+}
+
+// Cytoscape задаёт loop-direction от 12 часов по часовой стрелке.
+// Экранный вектор использует +X вправо и +Y вниз, поэтому обычный atan2
+// нельзя передавать в loop-direction напрямую.
+export function cytoscapeLoopAngleForScreenVector(vector) {
+  const unit = normalize(vector);
+  if (!unit) return 0;
+  return normalizeDegrees(Math.atan2(unit.x, -unit.y) * 180 / Math.PI);
+}
+
+// loop-direction — биссектриса self-loop, а loop-sweep — угол между
+// leaving/returning лучами. Для start-loop GREEN находится на target,
+// для end-loop GREEN находится на source. Возвращаем direction так,
+// чтобы именно GREEN-луч совпал с заданной outward-касательной.
+export function semanticLoopGeometry(outward, semanticEndpoint, sweepDegrees) {
+  if (semanticEndpoint !== "source" && semanticEndpoint !== "target") {
+    throw new Error(`Неизвестный semantic endpoint self-loop: ${semanticEndpoint}`);
+  }
+
+  const semanticRayAngle = cytoscapeLoopAngleForScreenVector(outward);
+  const halfSweep = sweepDegrees / 2;
+  const loopDirection = semanticEndpoint === "source"
+    ? normalizeDegrees(semanticRayAngle + halfSweep)
+    : normalizeDegrees(semanticRayAngle - halfSweep);
+
+  return {
+    outward: normalize(outward) ?? { x: 1, y: 0 },
+    semanticEndpoint,
+    semanticRayAngle,
+    loopDirection,
+    loopSweep: sweepDegrees,
+  };
+}
+
+export function semanticLoopRayAngle(loopDirection, semanticEndpoint, sweepDegrees) {
+  const halfSweep = sweepDegrees / 2;
+  return semanticEndpoint === "source"
+    ? normalizeDegrees(loopDirection - halfSweep)
+    : normalizeDegrees(loopDirection + halfSweep);
+}
+
+// Если один полюс самозамкнут, сначала фиксируем точную касательную
+// обычной соседней дуги T, а GREEN-касательную петли делаем равной -T.
+export function singleSelfLoopGeometry(center, companionPole, selfRole, tangentLength = ARC_TANGENT_LENGTH) {
+  if (selfRole !== "start" && selfRole !== "end") {
+    throw new Error(`Неизвестная роль self-loop: ${selfRole}`);
+  }
+
+  const companionOutward = normalize(subtract(companionPole, center)) ?? { x: 1, y: 0 };
+  const selfOutward = scale(companionOutward, -1);
+  const companionControl = add(center, scale(companionOutward, tangentLength));
+  const isStartSelf = selfRole === "start";
+  const loop = semanticLoopGeometry(
+    selfOutward,
+    isStartSelf ? "target" : "source",
+    isStartSelf ? START_LOOP_SWEEP_DEG : END_LOOP_SWEEP_DEG,
+  );
+
+  return {
+    companionOutward,
+    selfOutward,
+    companionControl,
+    companionStyle: isStartSelf
+      ? bezierControlStyle(center, companionPole, companionControl)
+      : bezierControlStyle(companionPole, center, companionControl),
+    loop,
+  };
+}
+
+// Для полной рекурсии обе дуги являются self-loop. Выбираем горизонтальную
+// пару GREEN-лучей и сохраняем тот же строгий 180°-инвариант.
+export function doubleSelfLoopGeometry() {
+  const startOutward = { x: -1, y: 0 };
+  const endOutward = { x: 1, y: 0 };
+  return {
+    startOutward,
+    endOutward,
+    startLoop: semanticLoopGeometry(startOutward, "target", START_LOOP_SWEEP_DEG),
+    endLoop: semanticLoopGeometry(endOutward, "source", END_LOOP_SWEEP_DEG),
   };
 }
 
@@ -229,20 +312,28 @@ function alignPoleArcs(cy) {
     }
 
     if (startSelf && endSelf) {
-      startEdge.style("loop-direction", "-90deg");
-      endEdge.style("loop-direction", "90deg");
+      const geometry = doubleSelfLoopGeometry();
+      applyLoopGeometry(startEdge, geometry.startLoop);
+      applyLoopGeometry(endEdge, geometry.endLoop);
       return;
     }
 
     if (startSelf) {
-      const endAngle = angleDegrees(subtract(endPosition, centerPosition));
-      startEdge.style("loop-direction", `${normalizeDegrees(endAngle + 180)}deg`);
+      const geometry = singleSelfLoopGeometry(centerPosition, endPosition, "start");
+      applyLoopGeometry(startEdge, geometry.loop);
+      applyBezierGeometry(endEdge, geometry.companionStyle);
       return;
     }
 
-    const startAngle = angleDegrees(subtract(startPosition, centerPosition));
-    endEdge.style("loop-direction", `${normalizeDegrees(startAngle + 180)}deg`);
+    const geometry = singleSelfLoopGeometry(centerPosition, startPosition, "end");
+    applyBezierGeometry(startEdge, geometry.companionStyle);
+    applyLoopGeometry(endEdge, geometry.loop);
   });
+}
+
+function applyLoopGeometry(edge, geometry) {
+  edge.style("loop-direction", `${geometry.loopDirection}deg`);
+  edge.style("loop-sweep", `${geometry.loopSweep}deg`);
 }
 
 function applyBezierGeometry(edge, geometry) {
@@ -287,10 +378,6 @@ function normalize(vector) {
   const length = Math.hypot(vector.x, vector.y);
   if (length <= GEOMETRY_EPSILON) return null;
   return { x: vector.x / length, y: vector.y / length };
-}
-
-function angleDegrees(vector) {
-  return Math.atan2(vector.y, vector.x) * 180 / Math.PI;
 }
 
 function normalizeDegrees(angle) {
@@ -361,8 +448,8 @@ export function graphStyle() {
         color: "#f4f7ff",
         "text-outline-color": "#111a2f",
         "text-outline-width": 2,
-        "background-color": "#18233d",
-        "border-color": "#6d83ad",
+        "background-color": "#174238",
+        "border-color": "#67e8b3",
         "border-width": 1.5,
         width: 44,
         height: 44,
@@ -414,7 +501,7 @@ export function graphStyle() {
         "control-point-distances": -34,
         "control-point-weights": 0.5,
         "loop-direction": "-90deg",
-        "loop-sweep": "-65deg",
+        "loop-sweep": `${START_LOOP_SWEEP_DEG}deg`,
         "line-fill": "linear-gradient",
         "line-gradient-stop-colors": "#ff657a #67e8b3",
         "line-gradient-stop-positions": "0% 100%",
@@ -438,7 +525,7 @@ export function graphStyle() {
         "control-point-distances": 34,
         "control-point-weights": 0.5,
         "loop-direction": "90deg",
-        "loop-sweep": "65deg",
+        "loop-sweep": `${END_LOOP_SWEEP_DEG}deg`,
         "line-fill": "linear-gradient",
         "line-gradient-stop-colors": "#67e8b3 #73a7ff",
         "line-gradient-stop-positions": "0% 100%",
