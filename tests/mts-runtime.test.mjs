@@ -20,6 +20,12 @@ function accepted(source) {
   return deserializerById("anum-v0.4").deserialize(parseAnum4(source));
 }
 
+test("accepted registry явно объявляет exact @mts/core / MTS v0.10", () => {
+  const runtime = deserializerById("anum-v0.4");
+  assert.equal(runtime.status, "accepted");
+  assert.match(runtime.title, /@mts\/core \/ MTS v0\.10/);
+});
+
 test("generated runtime имеет exact accepted MTS v0.10 provenance", () => {
   assert.equal(MTS_CORE_PROVENANCE.package, EXPECTED.package);
   assert.equal(MTS_CORE_PROVENANCE.packageVersion, EXPECTED.version);
