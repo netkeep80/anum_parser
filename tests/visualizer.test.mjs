@@ -2,12 +2,24 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { graphElementsForRendering, graphStyle } from "../src/visualizer.js";
+import {
+  graphElementsForRendering,
+  graphStyle,
+  pairedArcControlGeometry,
+} from "../src/visualizer.js";
 
 function styleFor(selector) {
   const rule = graphStyle().find((item) => item.selector === selector);
   assert.ok(rule, `style rule ${selector} must exist`);
   return rule.style;
+}
+
+function vector(from, to) {
+  return { x: to.x - from.x, y: to.y - from.y };
+}
+
+function cosine(a, b) {
+  return (a.x * b.x + a.y * b.y) / (Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y));
 }
 
 test("визуальная ориентация связи X = A ⟼ B: начало A -> X, конец X -> B", () => {
@@ -28,11 +40,10 @@ test("визуальная ориентация связи X = A ⟼ B: нача
   assert.deepEqual([end.data.source, end.data.target], ["X", "B"]);
 });
 
-test("начало связи — дуга с красным крестиком и градиентом красный -> зелёный к связи", () => {
+test("начало связи — красный -> зелёный к центру связи", () => {
   const style = styleFor('edge[role = "start"]');
 
   assert.equal(style["curve-style"], "unbundled-bezier");
-  assert.ok(style["control-point-distances"] < 0);
   assert.equal(style["source-label"], "×");
   assert.equal(style["target-label"], undefined);
   assert.equal(style["source-arrow-shape"], "none");
@@ -42,19 +53,44 @@ test("начало связи — дуга с красным крестиком 
   assert.equal(style["line-gradient-stop-positions"], "0% 100%");
 });
 
-test("конец связи — дуга от связи с градиентом зелёный -> красный и красным треугольником", () => {
-  const start = styleFor('edge[role = "start"]');
+test("конец связи — зелёный -> синий от центра связи и синяя стрелка", () => {
   const end = styleFor('edge[role = "end"]');
 
   assert.equal(end["curve-style"], "unbundled-bezier");
-  assert.ok(end["control-point-distances"] > 0);
-  assert.equal(end["control-point-distances"], -start["control-point-distances"]);
   assert.equal(end["source-arrow-shape"], "none");
   assert.equal(end["target-arrow-shape"], "triangle");
-  assert.equal(end["target-arrow-color"], "#ff657a");
+  assert.equal(end["target-arrow-color"], "#73a7ff");
   assert.equal(end["line-fill"], "linear-gradient");
-  assert.equal(end["line-gradient-stop-colors"], "#67e8b3 #ff657a");
+  assert.equal(end["line-gradient-stop-colors"], "#67e8b3 #73a7ff");
   assert.equal(end["line-gradient-stop-positions"], "0% 100%");
+});
+
+test("start/end дуги уходят от центра связи под 180 градусов", () => {
+  const center = { x: 20, y: -10 };
+  const startPole = { x: -80, y: 35 };
+  const endPole = { x: 95, y: 70 };
+  const geometry = pairedArcControlGeometry(center, startPole, endPole, 30);
+  const startTangent = vector(center, geometry.startControl);
+  const endTangent = vector(center, geometry.endControl);
+
+  assert.ok(Math.abs(cosine(startTangent, endTangent) + 1) < 1e-12);
+  assert.ok(geometry.startStyle);
+  assert.ok(geometry.endStyle);
+  assert.ok(Number.isFinite(geometry.startStyle.weight));
+  assert.ok(Number.isFinite(geometry.startStyle.distance));
+  assert.ok(Number.isFinite(geometry.endStyle.weight));
+  assert.ok(Number.isFinite(geometry.endStyle.distance));
+});
+
+test("вырожденная одинаковая сторона всё равно получает антиподальные касательные", () => {
+  const center = { x: 0, y: 0 };
+  const startPole = { x: 100, y: 0 };
+  const endPole = { x: 200, y: 0 };
+  const geometry = pairedArcControlGeometry(center, startPole, endPole, 24);
+  const startTangent = vector(center, geometry.startControl);
+  const endTangent = vector(center, geometry.endControl);
+
+  assert.ok(Math.abs(cosine(startTangent, endTangent) + 1) < 1e-12);
 });
 
 test("панель управления участвует в общем скролле страницы", async () => {
@@ -65,6 +101,15 @@ test("панель управления участвует в общем скр�
   assert.doesNotMatch(controlsRule[1], /position\s*:\s*sticky/i);
   assert.doesNotMatch(controlsRule[1], /\btop\s*:/i);
   assert.doesNotMatch(css, /position\s*:\s*sticky/i);
+});
+
+test("легенда повторяет RGB-язык дуг: красный -> зелёный -> синий", async () => {
+  const css = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(css, /--end:\s*#73a7ff/);
+  assert.match(css, /\.start-line::after\s*\{\s*background:\s*linear-gradient\(90deg, var\(--start\), var\(--b\)\);\s*\}/s);
+  assert.match(css, /\.end-line::before\s*\{\s*background:\s*linear-gradient\(90deg, var\(--b\), var\(--end\)\);\s*\}/s);
+  assert.match(css, /border-left:\s*8px solid var\(--end\)/);
 });
 
 test("версия приложения имеет semver и выводится браузерным UI из package.json", async () => {
