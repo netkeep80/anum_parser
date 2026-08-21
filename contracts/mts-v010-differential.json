@@ -1,0 +1,37 @@
+{
+  "schema": "anum-parser-mts-differential/v0.1",
+  "issue": 40,
+  "consumerLock": {
+    "schema": "anum-parser-mts-core-consumer-lock/v0.1",
+    "repository": "netkeep80/anum_docs",
+    "commit": "957c818d82bd3211f2a59547fff28e8ed0ec4331",
+    "contract": "mts-contract/v0.10",
+    "package": "@mts/core@0.10.0"
+  },
+  "semanticExecution": {
+    "localPath": "parseAnum4 -> anum-v0.4",
+    "upstreamPath": "validated abits -> @mts/core.executeAbits",
+    "acceptedCorpus": "examples/cases.json",
+    "acceptedCaseCount": 33,
+    "status": "parity-required"
+  },
+  "algorithmFailures": {
+    "status": "parity-required",
+    "mapping": "local detail.transition == upstream StreamError.code"
+  },
+  "sourceFormatBoundary": {
+    "classification": "presentation-boundary-not-semantic-mismatch",
+    "localAnum4": "strict-literal-abits-only",
+    "upstreamRawQuaternary": "whitespace-and-comments-normalized",
+    "productionMigrationTarget": "strict local .anum4 validation -> exact abit sequence -> @mts/core.executeAbits"
+  },
+  "proof": {
+    "state": "proved-by-executable-ci",
+    "semanticParity": true,
+    "algorithmFailureParity": true,
+    "sourceBoundaryClassified": true
+  },
+  "candidatePolicy": {
+    "v011AllowedAsCurrent": false
+  }
+}
