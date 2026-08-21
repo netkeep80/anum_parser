@@ -25,6 +25,12 @@
     "upstreamRawQuaternary": "whitespace-and-comments-normalized",
     "productionMigrationTarget": "strict local .anum4 validation -> exact abit sequence -> @mts/core.executeAbits"
   },
+  "proof": {
+    "state": "proved-by-executable-ci",
+    "semanticParity": true,
+    "algorithmFailureParity": true,
+    "sourceBoundaryClassified": true
+  },
   "candidatePolicy": {
     "v011AllowedAsCurrent": false
   }
