@@ -47,6 +47,7 @@ function assertLockedDocument(actual, expected, label) {
 
 const lock = readJson(LOCK_PATH);
 assert.equal(lock.schema, "anum-parser-mts-core-consumer-lock/v0.1");
+assert.equal(lock.channel, "accepted-current");
 assert.match(lock.repository, REPOSITORY);
 assert.match(lock.commit, FULL_SHA);
 assert.equal(lock.authority.floatingRefAllowed, false);
@@ -139,6 +140,7 @@ try {
   run(process.execPath, ["smoke.mjs"], consumer);
 
   console.log(`verified ${lock.package.name}@${lock.package.version}`);
+  console.log(`channel=${lock.channel}`);
   console.log(`source=${lock.repository}@${lock.commit}`);
   console.log(`artifact.sha256=${digest}`);
   console.log(`producer-record=node ${lock.package.producer.node} / npm ${lock.package.producer.npm}`);
