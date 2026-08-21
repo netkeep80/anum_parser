@@ -1,4 +1,6 @@
 const graphStates = new WeakMap();
+const ARC_TANGENT_LENGTH = 26;
+const GEOMETRY_EPSILON = 1e-9;
 
 export const GRAPH_LAYOUTS = Object.freeze([
   { id: "cose", title: "CoSE" },
@@ -77,6 +79,37 @@ export function graphElementsForRendering(aset, limit = 300) {
   });
 }
 
+// Строит две контрольные точки рядом с центром связи так, чтобы лучи,
+// уходящие от центра к start- и end-дуге, были строго антипараллельны.
+// Это геометрический инвариант представления и не меняет семантическую
+// ориентацию startPole -> link -> endPole.
+export function pairedArcControlGeometry(center, startPole, endPole, tangentLength = ARC_TANGENT_LENGTH) {
+  const startVector = subtract(startPole, center);
+  const endVector = subtract(endPole, center);
+  const startUnit = normalize(startVector);
+  const endUnit = normalize(endVector);
+
+  let outwardStart = normalize(subtract(startUnit, endUnit));
+  if (!outwardStart) {
+    const fallback = startUnit ?? scale(endUnit, -1) ?? { x: 1, y: 0 };
+    outwardStart = normalize({ x: -fallback.y, y: fallback.x }) ?? { x: 1, y: 0 };
+  }
+  if (dot(outwardStart, startVector) < 0) outwardStart = scale(outwardStart, -1);
+
+  const outwardEnd = scale(outwardStart, -1);
+  const startControl = add(center, scale(outwardStart, tangentLength));
+  const endControl = add(center, scale(outwardEnd, tangentLength));
+
+  return {
+    startControl,
+    endControl,
+    outwardStart,
+    outwardEnd,
+    startStyle: bezierControlStyle(startPole, center, startControl),
+    endStyle: bezierControlStyle(center, endPole, endControl),
+  };
+}
+
 export function renderAset(container, aset, options = {}) {
   destroyGraph(container);
   if (!aset?.links?.length) {
@@ -101,6 +134,11 @@ export function renderAset(container, aset, options = {}) {
     autoungrabify: false,
     boxSelectionEnabled: false,
   });
+
+  const alignArcs = () => alignPoleArcs(cy);
+  cy.on("layoutstop", alignArcs);
+  cy.on("position", "node", alignArcs);
+  cy.ready(alignArcs);
 
   const resizeObserver = new ResizeObserver(() => cy.resize());
   resizeObserver.observe(container);
@@ -164,6 +202,99 @@ export function destroyGraph(container) {
   state.resizeObserver.disconnect();
   state.cy.destroy();
   graphStates.delete(container);
+}
+
+function alignPoleArcs(cy) {
+  cy.nodes().forEach((centerNode) => {
+    const linkId = centerNode.data("linkId");
+    if (!linkId) return;
+
+    const startEdge = cy.getElementById(`pole-start:${linkId}`);
+    const endEdge = cy.getElementById(`pole-end:${linkId}`);
+    if (startEdge.empty() || endEdge.empty()) return;
+
+    const startPole = startEdge.source();
+    const endPole = endEdge.target();
+    const centerPosition = centerNode.position();
+    const startPosition = startPole.position();
+    const endPosition = endPole.position();
+    const startSelf = startPole.id() === centerNode.id();
+    const endSelf = endPole.id() === centerNode.id();
+
+    if (!startSelf && !endSelf) {
+      const geometry = pairedArcControlGeometry(centerPosition, startPosition, endPosition);
+      applyBezierGeometry(startEdge, geometry.startStyle);
+      applyBezierGeometry(endEdge, geometry.endStyle);
+      return;
+    }
+
+    if (startSelf && endSelf) {
+      startEdge.style("loop-direction", "-90deg");
+      endEdge.style("loop-direction", "90deg");
+      return;
+    }
+
+    if (startSelf) {
+      const endAngle = angleDegrees(subtract(endPosition, centerPosition));
+      startEdge.style("loop-direction", `${normalizeDegrees(endAngle + 180)}deg`);
+      return;
+    }
+
+    const startAngle = angleDegrees(subtract(startPosition, centerPosition));
+    endEdge.style("loop-direction", `${normalizeDegrees(startAngle + 180)}deg`);
+  });
+}
+
+function applyBezierGeometry(edge, geometry) {
+  if (!geometry) return;
+  edge.style("control-point-weights", geometry.weight);
+  edge.style("control-point-distances", geometry.distance);
+}
+
+function bezierControlStyle(source, target, control) {
+  const chord = subtract(target, source);
+  const lengthSquared = dot(chord, chord);
+  if (lengthSquared <= GEOMETRY_EPSILON) return null;
+
+  const length = Math.sqrt(lengthSquared);
+  const weight = dot(subtract(control, source), chord) / lengthSquared;
+  const pointOnChord = add(source, scale(chord, weight));
+  const normal = { x: -chord.y / length, y: chord.x / length };
+  const distance = dot(subtract(control, pointOnChord), normal);
+  return { weight, distance };
+}
+
+function add(a, b) {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+function subtract(a, b) {
+  if (!a || !b) return { x: 0, y: 0 };
+  return { x: a.x - b.x, y: a.y - b.y };
+}
+
+function scale(vector, factor) {
+  if (!vector) return null;
+  return { x: vector.x * factor, y: vector.y * factor };
+}
+
+function dot(a, b) {
+  return a.x * b.x + a.y * b.y;
+}
+
+function normalize(vector) {
+  if (!vector) return null;
+  const length = Math.hypot(vector.x, vector.y);
+  if (length <= GEOMETRY_EPSILON) return null;
+  return { x: vector.x / length, y: vector.y / length };
+}
+
+function angleDegrees(vector) {
+  return Math.atan2(vector.y, vector.x) * 180 / Math.PI;
+}
+
+function normalizeDegrees(angle) {
+  return ((angle % 360) + 360) % 360;
 }
 
 function requireCytoscape() {
@@ -282,7 +413,7 @@ export function graphStyle() {
         "curve-style": "unbundled-bezier",
         "control-point-distances": -34,
         "control-point-weights": 0.5,
-        "loop-direction": "-70deg",
+        "loop-direction": "-90deg",
         "loop-sweep": "-65deg",
         "line-fill": "linear-gradient",
         "line-gradient-stop-colors": "#ff657a #67e8b3",
@@ -306,15 +437,15 @@ export function graphStyle() {
         "curve-style": "unbundled-bezier",
         "control-point-distances": 34,
         "control-point-weights": 0.5,
-        "loop-direction": "70deg",
+        "loop-direction": "90deg",
         "loop-sweep": "65deg",
         "line-fill": "linear-gradient",
-        "line-gradient-stop-colors": "#67e8b3 #ff657a",
+        "line-gradient-stop-colors": "#67e8b3 #73a7ff",
         "line-gradient-stop-positions": "0% 100%",
         "line-color": "#67e8b3",
         "source-arrow-shape": "none",
         "target-arrow-shape": "triangle",
-        "target-arrow-color": "#ff657a",
+        "target-arrow-color": "#73a7ff",
         "target-arrow-fill": "filled",
       },
     },
