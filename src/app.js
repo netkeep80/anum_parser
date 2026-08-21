@@ -3,6 +3,7 @@ import { availableDeserializers, deserializerById } from "./deserializers.js";
 import { availableSerializers, serializerById } from "./serializers.js";
 import {
   GRAPH_LAYOUTS,
+  ROOTED_LAYOUT_ID,
   changeGraphLayout,
   fitGraph,
   renderAset,
@@ -38,7 +39,7 @@ async function boot() {
     option("aset-carrier", ".aset.json — прочитать carrier через ANUM v0.4"),
   );
   ui.graphLayout.replaceChildren(...GRAPH_LAYOUTS.map((layout) => option(layout.id, layout.title)));
-  ui.graphLayout.value = "cose";
+  ui.graphLayout.value = ROOTED_LAYOUT_ID;
   ui.sample.replaceChildren(...state.cases.map((c, i) => option(String(i), `${c.id} — ${c.title}`)));
   ui.sample.addEventListener("change", selectSample);
   ui.inputFormat.addEventListener("change", refreshAlgorithms);
