@@ -1,8 +1,16 @@
+import {
+  minimizeArcCrossings,
+  sampleCubicBezier,
+  sampleQuadraticBezier,
+} from "./layout-postprocessor.js";
+
 const graphStates = new WeakMap();
 const ARC_TANGENT_LENGTH = 26;
 const GEOMETRY_EPSILON = 1e-9;
 const START_LOOP_SWEEP_DEG = -65;
 const END_LOOP_SWEEP_DEG = 65;
+const SELF_LOOP_NODE_RADIUS = 24;
+const SELF_LOOP_CONTROL_RADIUS = 54;
 
 export const GRAPH_LAYOUTS = Object.freeze([
   { id: "cose", title: "CoSE" },
@@ -193,6 +201,111 @@ export function doubleSelfLoopGeometry() {
   };
 }
 
+// Строит полилинейное приближение именно тех RGB-дуг, которые видит пользователь.
+// Оно используется только layout-постпроцессором и не является семантической моделью.
+export function graphArcPaths(aset, positions, limit = 300, samples = 6) {
+  if (!aset?.links?.length) return [];
+  const links = aset.links.slice(0, limit);
+  const visible = new Set(links.map((link) => link.id));
+  const paths = [];
+
+  for (const link of links) {
+    const center = positions?.[link.id];
+    if (!center) continue;
+    const startPosition = visible.has(link.start) ? positions?.[link.start] : null;
+    const endPosition = visible.has(link.end) ? positions?.[link.end] : null;
+    const startSelf = link.start === link.id;
+    const endSelf = link.end === link.id;
+
+    if (startPosition && endPosition && !startSelf && !endSelf) {
+      const geometry = pairedArcControlGeometry(center, startPosition, endPosition);
+      paths.push({
+        id: `pole-start:${link.id}`,
+        source: link.start,
+        target: link.id,
+        points: sampleQuadraticBezier(startPosition, geometry.startControl, center, samples),
+      });
+      paths.push({
+        id: `pole-end:${link.id}`,
+        source: link.id,
+        target: link.end,
+        points: sampleQuadraticBezier(center, geometry.endControl, endPosition, samples),
+      });
+      continue;
+    }
+
+    if (startSelf && endSelf) {
+      const geometry = doubleSelfLoopGeometry();
+      paths.push(loopArcPath(`pole-start:${link.id}`, link.id, center, geometry.startLoop, samples));
+      paths.push(loopArcPath(`pole-end:${link.id}`, link.id, center, geometry.endLoop, samples));
+      continue;
+    }
+
+    if (startSelf && endPosition) {
+      const geometry = singleSelfLoopGeometry(center, endPosition, "start");
+      paths.push(loopArcPath(`pole-start:${link.id}`, link.id, center, geometry.loop, samples));
+      paths.push({
+        id: `pole-end:${link.id}`,
+        source: link.id,
+        target: link.end,
+        points: sampleQuadraticBezier(center, geometry.companionControl, endPosition, samples),
+      });
+      continue;
+    }
+
+    if (endSelf && startPosition) {
+      const geometry = singleSelfLoopGeometry(center, startPosition, "end");
+      paths.push({
+        id: `pole-start:${link.id}`,
+        source: link.start,
+        target: link.id,
+        points: sampleQuadraticBezier(startPosition, geometry.companionControl, center, samples),
+      });
+      paths.push(loopArcPath(`pole-end:${link.id}`, link.id, center, geometry.loop, samples));
+      continue;
+    }
+
+    if (startPosition && !startSelf) {
+      paths.push({
+        id: `pole-start:${link.id}`,
+        source: link.start,
+        target: link.id,
+        points: [startPosition, center],
+      });
+    }
+    if (endPosition && !endSelf) {
+      paths.push({
+        id: `pole-end:${link.id}`,
+        source: link.id,
+        target: link.end,
+        points: [center, endPosition],
+      });
+    }
+  }
+
+  return paths;
+}
+
+export function optimizeAsetLayoutPositions(aset, positions, options = {}) {
+  const visibleCount = Math.min(aset?.links?.length ?? 0, 300);
+  const profile = visibleCount > 160
+    ? { samples: 3, maxPasses: 2, maxHotNodes: 6, maxEvaluations: 48 }
+    : visibleCount > 80
+      ? { samples: 4, maxPasses: 3, maxHotNodes: 8, maxEvaluations: 110 }
+      : { samples: 6, maxPasses: 4, maxHotNodes: 10, maxEvaluations: 220 };
+  const samples = options.samples ?? profile.samples;
+
+  return minimizeArcCrossings({
+    positions,
+    buildPaths: (candidate) => graphArcPaths(aset, candidate, 300, samples),
+    fixedIds: [aset?.root].filter(Boolean),
+    maxPasses: options.maxPasses ?? profile.maxPasses,
+    maxHotNodes: options.maxHotNodes ?? profile.maxHotNodes,
+    maxEvaluations: options.maxEvaluations ?? profile.maxEvaluations,
+    displacementWeight: options.displacementWeight ?? 0.18,
+  });
+}
+
 export function renderAset(container, aset, options = {}) {
   destroyGraph(container);
   if (!aset?.links?.length) {
@@ -218,10 +331,36 @@ export function renderAset(container, aset, options = {}) {
     boxSelectionEnabled: false,
   });
 
+  let applyingPostprocess = false;
+  let lastPostprocessedSignature = null;
   const alignArcs = () => alignPoleArcs(cy);
-  cy.on("layoutstop", alignArcs);
-  cy.on("position", "node", alignArcs);
-  cy.ready(alignArcs);
+  const postprocessLayout = () => {
+    if (applyingPostprocess) return;
+    const positions = readCyPositions(cy);
+    const inputSignature = positionSignature(positions);
+    if (inputSignature === lastPostprocessedSignature) {
+      alignArcs();
+      return;
+    }
+
+    const result = optimizeAsetLayoutPositions(aset, positions);
+    applyingPostprocess = true;
+    try {
+      if (result.changed) applyCyPositions(cy, result.positions);
+      alignArcs();
+      lastPostprocessedSignature = positionSignature(result.positions);
+      container.dataset.crossingsBefore = String(result.crossingsBefore);
+      container.dataset.crossingsAfter = String(result.crossingsAfter);
+    } finally {
+      applyingPostprocess = false;
+    }
+  };
+
+  cy.on("layoutstop", postprocessLayout);
+  cy.on("position", "node", () => {
+    if (!applyingPostprocess) alignArcs();
+  });
+  cy.ready(() => queueMicrotask(postprocessLayout));
 
   const resizeObserver = new ResizeObserver(() => cy.resize());
   resizeObserver.observe(container);
@@ -329,6 +468,53 @@ function alignPoleArcs(cy) {
     applyBezierGeometry(startEdge, geometry.companionStyle);
     applyLoopGeometry(endEdge, geometry.loop);
   });
+}
+
+function loopArcPath(id, linkId, center, geometry, samples) {
+  const sourceAngle = normalizeDegrees(geometry.loopDirection - geometry.loopSweep / 2);
+  const targetAngle = normalizeDegrees(geometry.loopDirection + geometry.loopSweep / 2);
+  const sourceRay = screenVectorForCytoscapeAngle(sourceAngle);
+  const targetRay = screenVectorForCytoscapeAngle(targetAngle);
+  const source = add(center, scale(sourceRay, SELF_LOOP_NODE_RADIUS));
+  const target = add(center, scale(targetRay, SELF_LOOP_NODE_RADIUS));
+  const control1 = add(center, scale(sourceRay, SELF_LOOP_CONTROL_RADIUS));
+  const control2 = add(center, scale(targetRay, SELF_LOOP_CONTROL_RADIUS));
+  return {
+    id,
+    source: linkId,
+    target: linkId,
+    points: sampleCubicBezier(source, control1, control2, target, Math.max(samples, 5)),
+  };
+}
+
+function screenVectorForCytoscapeAngle(angle) {
+  const radians = angle * Math.PI / 180;
+  return { x: Math.sin(radians), y: -Math.cos(radians) };
+}
+
+function readCyPositions(cy) {
+  const positions = {};
+  cy.nodes().forEach((node) => {
+    const position = node.position();
+    positions[node.id()] = { x: position.x, y: position.y };
+  });
+  return positions;
+}
+
+function applyCyPositions(cy, positions) {
+  cy.batch(() => {
+    for (const [id, position] of Object.entries(positions)) {
+      const node = cy.getElementById(id);
+      if (!node.empty()) node.position(position);
+    }
+  });
+}
+
+function positionSignature(positions) {
+  return Object.keys(positions).sort().map((id) => {
+    const position = positions[id];
+    return `${id}:${position.x.toFixed(3)},${position.y.toFixed(3)}`;
+  }).join("|");
 }
 
 function applyLoopGeometry(edge, geometry) {
