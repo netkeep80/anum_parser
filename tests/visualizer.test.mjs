@@ -3,9 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  cytoscapeLoopAngleForScreenVector,
+  doubleSelfLoopGeometry,
   graphElementsForRendering,
   graphStyle,
   pairedArcControlGeometry,
+  semanticLoopRayAngle,
+  singleSelfLoopGeometry,
 } from "../src/visualizer.js";
 
 function styleFor(selector) {
@@ -20,6 +24,15 @@ function vector(from, to) {
 
 function cosine(a, b) {
   return (a.x * b.x + a.y * b.y) / (Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y));
+}
+
+function assertOpposite(a, b) {
+  assert.ok(Math.abs(cosine(a, b) + 1) < 1e-12, `vectors must be opposite: ${JSON.stringify({ a, b })}`);
+}
+
+function assertSameAngle(actual, expected) {
+  const delta = Math.abs(((actual - expected + 540) % 360) - 180);
+  assert.ok(delta < 1e-12, `angles differ: actual=${actual}, expected=${expected}`);
 }
 
 test("визуальная ориентация связи X = A ⟼ B: начало A -> X, конец X -> B", () => {
@@ -51,6 +64,7 @@ test("начало связи — красный -> зелёный к центр
   assert.equal(style["line-fill"], "linear-gradient");
   assert.equal(style["line-gradient-stop-colors"], "#ff657a #67e8b3");
   assert.equal(style["line-gradient-stop-positions"], "0% 100%");
+  assert.equal(style["loop-sweep"], "-65deg");
 });
 
 test("конец связи — зелёный -> синий от центра связи и синяя стрелка", () => {
@@ -63,6 +77,20 @@ test("конец связи — зелёный -> синий от центра �
   assert.equal(end["line-fill"], "linear-gradient");
   assert.equal(end["line-gradient-stop-colors"], "#67e8b3 #73a7ff");
   assert.equal(end["line-gradient-stop-positions"], "0% 100%");
+  assert.equal(end["loop-sweep"], "65deg");
+});
+
+test("все node — зелёные центры RGB-схемы, root отличается не цветом, а размером и рамкой", () => {
+  const node = styleFor("node");
+  const root = styleFor('node[root = "yes"]');
+
+  assert.equal(node["background-color"], "#174238");
+  assert.equal(node["border-color"], "#67e8b3");
+  assert.equal(root["background-color"], "#174238");
+  assert.equal(root["border-color"], "#67e8b3");
+  assert.ok(root.width > node.width);
+  assert.ok(root.height > node.height);
+  assert.ok(root["border-width"] > node["border-width"]);
 });
 
 test("start/end дуги уходят от центра связи под 180 градусов", () => {
@@ -73,7 +101,7 @@ test("start/end дуги уходят от центра связи под 180 г
   const startTangent = vector(center, geometry.startControl);
   const endTangent = vector(center, geometry.endControl);
 
-  assert.ok(Math.abs(cosine(startTangent, endTangent) + 1) < 1e-12);
+  assertOpposite(startTangent, endTangent);
   assert.ok(geometry.startStyle);
   assert.ok(geometry.endStyle);
   assert.ok(Number.isFinite(geometry.startStyle.weight));
@@ -90,7 +118,74 @@ test("вырожденная одинаковая сторона всё равн
   const startTangent = vector(center, geometry.startControl);
   const endTangent = vector(center, geometry.endControl);
 
-  assert.ok(Math.abs(cosine(startTangent, endTangent) + 1) < 1e-12);
+  assertOpposite(startTangent, endTangent);
+});
+
+test("углы Cytoscape считаются от 12 часов по часовой стрелке", () => {
+  assertSameAngle(cytoscapeLoopAngleForScreenVector({ x: 0, y: -1 }), 0);
+  assertSameAngle(cytoscapeLoopAngleForScreenVector({ x: 1, y: 0 }), 90);
+  assertSameAngle(cytoscapeLoopAngleForScreenVector({ x: 0, y: 1 }), 180);
+  assertSameAngle(cytoscapeLoopAngleForScreenVector({ x: -1, y: 0 }), 270);
+});
+
+test("start self-loop получает GREEN-касательную строго напротив обычного end", () => {
+  const center = { x: 10, y: 15 };
+  const endPole = { x: 110, y: 65 };
+  const geometry = singleSelfLoopGeometry(center, endPole, "start", 30);
+
+  assertOpposite(geometry.selfOutward, geometry.companionOutward);
+  assert.ok(geometry.companionStyle);
+  assert.equal(geometry.loop.semanticEndpoint, "target");
+  assert.equal(geometry.loop.loopSweep, -65);
+  assertSameAngle(
+    semanticLoopRayAngle(
+      geometry.loop.loopDirection,
+      geometry.loop.semanticEndpoint,
+      geometry.loop.loopSweep,
+    ),
+    cytoscapeLoopAngleForScreenVector(geometry.selfOutward),
+  );
+});
+
+test("end self-loop получает GREEN-касательную строго напротив обычного start", () => {
+  const center = { x: -20, y: 30 };
+  const startPole = { x: -120, y: 80 };
+  const geometry = singleSelfLoopGeometry(center, startPole, "end", 30);
+
+  assertOpposite(geometry.selfOutward, geometry.companionOutward);
+  assert.ok(geometry.companionStyle);
+  assert.equal(geometry.loop.semanticEndpoint, "source");
+  assert.equal(geometry.loop.loopSweep, 65);
+  assertSameAngle(
+    semanticLoopRayAngle(
+      geometry.loop.loopDirection,
+      geometry.loop.semanticEndpoint,
+      geometry.loop.loopSweep,
+    ),
+    cytoscapeLoopAngleForScreenVector(geometry.selfOutward),
+  );
+});
+
+test("double self-loop имеет две антиподальные GREEN-касательные", () => {
+  const geometry = doubleSelfLoopGeometry();
+
+  assertOpposite(geometry.startOutward, geometry.endOutward);
+  assertSameAngle(
+    semanticLoopRayAngle(
+      geometry.startLoop.loopDirection,
+      geometry.startLoop.semanticEndpoint,
+      geometry.startLoop.loopSweep,
+    ),
+    cytoscapeLoopAngleForScreenVector(geometry.startOutward),
+  );
+  assertSameAngle(
+    semanticLoopRayAngle(
+      geometry.endLoop.loopDirection,
+      geometry.endLoop.semanticEndpoint,
+      geometry.endLoop.loopSweep,
+    ),
+    cytoscapeLoopAngleForScreenVector(geometry.endOutward),
+  );
 });
 
 test("панель управления участвует в общем скролле страницы", async () => {
