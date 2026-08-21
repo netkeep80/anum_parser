@@ -7,7 +7,20 @@
 
 Лаборатория позволяет наглядно исполнять принятую десериализацию ачисел и одновременно сохранять рядом экспериментальные варианты для сравнения. Экспериментальный алгоритм сам по себе не изменяет нормативную МТС: принятие происходит отдельно в `anum_docs`.
 
-Текущий основной четверичный алгоритм лаборатории синхронизирован с принятой поверхностью **`anum-deserialization/v0.4` / MTS v0.6** из `anum_docs`.
+Текущая normative boundary лаборатории:
+
+```text
+semantic authority = netkeep80/anum_docs
+accepted MTS       = v0.10
+runtime package    = @mts/core@0.10.0
+consumer mode      = exact pinned artifact
+```
+
+`anum_parser` не копирует текущую семантику МТС и не поддерживает собственный accepted interpreter. Accepted четверичный путь делегирует исполнение `@mts/core.executeAbits` из exact-проверенного artifact.
+
+Идентификатор `anum-v0.4` сохранён как стабильный **лабораторный id десериализатора**. Это не номер текущего релиза МТС.
+
+На наблюдаемом upstream `anum_docs` MTS v0.11 остаётся candidate / NOT ACCEPTED. Лаборатория не подключает candidate как production runtime и не эмулирует его локально. После официального acceptance следующий переход должен быть отдельным explicit repin с новым exact SHA, contract/conformance и artifact digest.
 
 ## Главное различение
 
@@ -16,9 +29,9 @@
 1. последовательность исходных символов;
 2. последовательность абитов;
 3. связь;
-4. упорядоченная последовательность ссылок на связи;
-5. акорневая связь-последовательность, используемая как носитель;
-6. связь, хранящая ачисло;
+4. упорядоченную последовательность ссылок на связи;
+5. акорневую связь-последовательность, используемую как носитель;
+6. связь, хранящую ачисло;
 7. денотат, полученный конкретной десериализацией.
 
 Для МТС действует базовая аксиома тождества связи:
@@ -33,6 +46,29 @@ A = C ∧ B = D
 
 Это принципиально отличает используемую здесь модель МТС от модели сети дуплетов Теории связей, где отдельная ссылка связи и значение пары могут быть разными уровнями.
 
+## Exact consumer boundary
+
+Accepted runtime фиксируется в:
+
+```text
+contracts/mts-core-consumer-lock.json
+```
+
+Текущий lock связывает вместе:
+
+```text
+upstream repository = netkeep80/anum_docs
+exact upstream SHA  = 957c818d82bd3211f2a59547fff28e8ed0ec4331
+contract            = mts-contract/v0.10
+conformance         = mts-conformance/v0.10
+package             = @mts/core@0.10.0
+artifact sha256     = 0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007
+```
+
+Перед тестами и Pages deploy `scripts/materialize-mts-core.mjs` заново получает exact source SHA, проверяет accepted contract/conformance, собирает package, сверяет digest и только затем создаёт gitignored `generated/mts-core/`.
+
+`generated/` — build product, а не второй источник семантики.
+
 ## Корневой транспорт
 
 Четверичное ачисло передаёт ровно четыре абита:
@@ -41,19 +77,11 @@ A = C ∧ B = D
 [ ] 1 0
 ```
 
-Акорень `∞ = R` не является пятым абитом. Каждый новый контекст десериализации начинается от `R`.
+Акорень `∞ = R` не является пятым абитом.
 
-Принятая стековая семантика ачисел v0.4:
+Строгий `.anum4` parser является **presentation boundary** лаборатории: файл должен содержать только literal `[ ] 1 0`. После проверки exact abit sequence передаётся в accepted `@mts/core.executeAbits`.
 
-```text
-[        открыть новый контекст от R
-1        добавить L
-0        добавить U
-] empty  вернуть R
-] value  вернуть R ⟼ value
-```
-
-Поэтому, в частности:
+Контрольные примеры принятого runtime:
 
 ```text
 ε     -> R
@@ -64,29 +92,36 @@ A = C ∧ B = D
 [[]]  -> R
 ```
 
-Чтение и проверка отделены от материализации. Граф лаборатории показывает конкретную построенную асеть, а тождество связей остаётся каноническим по полюсам.
+Локальный `AsetBuilder` при accepted execution не определяет переходы `OPEN/CLOSE/VALUE`: он только материализует вызовы `link(start,end)`, сделанные upstream runtime, и строит presentation/visualization projection.
 
-## Два входных транспорта v0.4
+## Два входных транспорта accepted runtime
 
-Одна и та же принятая стековая машина теперь имеет два входных пути.
+Один accepted runtime имеет два входных пути.
 
-Первый путь — обычный физический поток `.anum4`. Он уже содержит символы `[ ] 1 0` и сразу поступает в стековую машину.
+Первый путь — обычный физический поток `.anum4`:
 
-Второй путь — существующая асеть с явно указанной связью-носителем в `provenance.representations.carrier`. Лаборатория читает её только как конечную start-историю от `R`: каждый шаг даёт очередной конечный полюс, который обязан быть одной из четырёх корневых связей `O/C/L/U`. После этого восстанавливается тот же поток `[ ] 1 0`, и только затем запускается **та же** `anum-v0.4`.
+```text
+.anum4
+  -> strict local validation
+  -> exact [ ] 1 0 sequence
+  -> @mts/core.executeAbits
+```
 
-Таким образом, для связи-носителя нет второго алгоритма `OPEN/CLOSE/VALUE`, скрытого пятого абита или отдельной семантики связи. Исходная импортированная асеть при таком чтении не изменяется.
+Второй путь — существующая асеть с явно указанной связью-носителем в `provenance.representations.carrier`. Лаборатория читает её только как конечную start-историю от `R`, восстанавливает `O/C/L/U`, переводит их обратно в `[ ] 1 0` и передаёт в **тот же** accepted runtime.
 
-В интерфейсе эти два действия разделены явно:
+Таким образом, для связи-носителя нет второго алгоритма `OPEN/CLOSE/VALUE`, скрытого пятого абита или отдельной нормативной семантики. Исходная импортированная асеть при чтении не изменяется.
+
+В интерфейсе эти действия разделены явно:
 
 - `.aset.json — открыть асеть` — только показать уже существующую асеть;
-- `.aset.json — прочитать carrier через ANUM v0.4` — прочитать явно отмеченную связь-носитель и выполнить принятую стековую машину.
+- `.aset.json — прочитать carrier через ANUM v0.4` — восстановить четверичный transport и исполнить exact accepted `@mts/core` runtime.
 
 ## Форматы
 
 - `.anum4` — исходное четверичное ачисло профиля `[ ] 1 0`;
 - `.anums` — исходное строковое ачисло в UTF-8 без скрытой нормализации;
 - `.anum.json` — самодокументируемый контейнер эксперимента;
-- `.aset.json` — наглядный снимок канонической асети; его можно открыть как снимок или явно использовать отмеченную связь-носитель как вход v0.4.
+- `.aset.json` — наглядный снимок канонической асети; его можно открыть как снимок или явно использовать отмеченную связь-носитель как вход accepted runtime.
 
 Подробно: [`docs/formats.md`](docs/formats.md).
 
@@ -96,24 +131,42 @@ A = C ∧ B = D
 
 - вводить или загружать разные форматы;
 - независимо выбирать десериализатор и сериализатор;
-- сравнивать принятый и экспериментальный алгоритмы на одном исходнике;
+- сравнивать accepted и experimental алгоритмы на одном исходнике;
 - отдельно видеть символы, абиты, последовательности ссылок, акорневые цепочки и связи-хранилища;
-- пошагово видеть позицию источника, стек, `current` и изменения асети;
-- наблюдать, как новые связи появляются в графе именно на шагах их построения;
-- открыть `.aset.json` как готовую асеть или прочитать её явно отмеченный носитель через v0.4;
+- пошагово видеть позицию источника, контекстную проекцию, `current` и изменения асети;
+- наблюдать, как новые связи появляются в графе именно после upstream semantic operation;
+- открыть `.aset.json` как готовую асеть или прочитать её явно отмеченный носитель;
 - визуализировать асеть с перемещением, масштабированием и несколькими раскладками;
 - сохранять `.aset.json` и без потерь восстанавливать исходную запись, когда это доказано происхождением данных.
 
-Приложение не требует сервера и публикуется через GitHub Pages.
+GitHub Pages materializes и публикует тот же exact-pinned `@mts/core`, который проверяется CI. Production browser больше не исполняет старую локальную accepted stack machine.
 
 ## Десериализаторы
 
-- `anum-v0.4` — **принят**: текущая четверичная стековая десериализация МТС для физического потока и существующей связи-носителя;
-- `stack-group-value-v0` — **экспериментальный**: группа возвращает внутреннее значение напрямую, без `R ⟼ value`; сохранён как сравнительный эксперимент;
-- `abit-flat-v0` — **экспериментальный**: контрольная плоская свёртка четырёх абитов без стековой семантики;
-- `string-flat-v0` — **экспериментальный**: строковая UTF-8 левая свёртка.
+- `anum-v0.4` — **accepted laboratory id**: строгий четверичный input и existing-carrier transport делегируют semantics в exact `@mts/core` / MTS v0.10;
+- `stack-group-value-v0` — **experimental**: локальная историческая stack machine, где группа возвращает внутреннее значение напрямую; не является нормативной МТС;
+- `abit-flat-v0` — **experimental**: контрольная плоская свёртка четырёх абитов;
+- `string-flat-v0` — **experimental**: строковая UTF-8 левая свёртка.
 
-Старый отдельный id `stack-root-wrap-v0` удалён: его поведение стало принятой семантикой `anum-v0.4`, поэтому слой совместимости или псевдоним не нужен.
+Локальный `deserializeStack` разрешён только для explicit experimental algorithms. Accepted path fail-closed от попытки использовать его как semantic authority.
+
+## Provenance accepted результата
+
+Accepted `.aset.json` фиксирует не только `status=accepted`, но и exact upstream authority:
+
+```text
+semanticAuthority.package
+semanticAuthority.version
+semanticAuthority.contract
+semanticAuthority.conformance
+semanticAuthority.upstreamRepository
+semanticAuthority.upstreamCommit
+semanticAuthority.artifactSha256
+semanticAuthority.generatedTreeSha256
+semanticAuthority.consumerLock
+```
+
+Это позволяет отличить смысловую норму от локального presentation adapter и не принять случайный moving/candidate runtime за current.
 
 ## Сериализаторы
 
@@ -127,34 +180,53 @@ A = C ∧ B = D
 
 [`examples/cases.json`](examples/cases.json) содержит принятые четверичные входы, ошибочные границы, сравнительные эксперименты, исторические строки и Unicode.
 
-Отдельные регрессионные тесты проверяют:
+CI проверяет одновременно:
 
-- соответствие принятой семантике ачисел v0.4;
-- совпадение результата физического потока и существующей связи-носителя;
+- exact rebuild + SHA256 `@mts/core` artifact;
+- package-root consumer boundary;
+- differential corpus старого локального baseline против accepted v0.10;
+- accepted runtime projection против прямого `@mts/core.executeAbits`;
+- exact semanticAuthority provenance;
+- совпадение физического transport и existing-carrier path;
 - неизменность входной асети при чтении носителя;
-- отказ для бесконечной start-истории и для значения, которое не является одним из четырёх абитов;
 - `[] = R` и схлопывание `R ⟼ R = R`;
-- повтор одной пары возвращает ту же смысловую связь;
-- повтор позиции не создаёт экземпляр связи;
-- будущая связь не видна на предыдущем шаге отладчика и появляется в графе только после соответствующей операции;
-- `.aset.json` с двумя разными `id` одной формы отвергается.
+- identity связей по полюсам;
+- debugger/visualizer projection invariants;
+- явную ненормативность experimental algorithms.
+
+## MTS v0.11 candidate
+
+Текущий consumer intentionally остаётся на accepted v0.10, пока upstream contract v0.11 содержит:
+
+```text
+status = candidate
+accepted = false
+acceptanceReady = false
+candidateRuntimeSelectable = false
+```
+
+Новые candidate semantics (`TopBind(R,S)`, top-level `.`, nested contextual binding и дальнейшие C4/C5/C6 lifecycle slices) не должны реализовываться второй локальной semantic machine в `anum_parser`.
+
+После official upstream acceptance требуется отдельный migration PR: новый exact lock, artifact digest, differential evidence, runtime tests и только затем production switch.
 
 ## Локальная проверка
 
-Требуется Node.js 24 или новее.
+Требуется Node.js 24 или новее и доступ к exact upstream Git SHA для materialization.
 
 ```bash
 npm run check
 npm test
 ```
 
+Обе команды автоматически выполняют `npm run mts:prepare` перед импортом accepted runtime.
+
 ## Материалы
 
-- [`docs/history.md`](docs/history.md) — выжимка исторических записей;
-- [`docs/formats.md`](docs/formats.md) — файловые форматы;
-- [`docs/architecture.md`](docs/architecture.md) — слои и границы;
+- [`docs/history.md`](docs/history.md) — историческая выжимка; старые версии там могут упоминаться как история;
+- [`docs/formats.md`](docs/formats.md) — файловые форматы и provenance;
+- [`docs/architecture.md`](docs/architecture.md) — current runtime/authority boundary;
 - [`examples/cases.json`](examples/cases.json) — общий корпус примеров.
 
 ## Управление изменениями
 
-Изменения проходят обязательную проверку `repo-guard`. История старых вариантов хранится Git, обсуждениях PR и задачах GitHub; устаревшие слои совместимости не сохраняются только ради истории.
+Изменения проходят обязательную проверку `repo-guard`. Accepted MTS version меняется только explicit repin по machine-readable lock; moving `main` или candidate contract не считаются production authority.
