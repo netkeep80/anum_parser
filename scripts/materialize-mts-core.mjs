@@ -19,6 +19,7 @@ const lockPath = resolve("contracts/mts-core-consumer-lock.json");
 const generatedRoot = resolve("generated");
 const target = join(generatedRoot, "mts-core");
 const markerPath = join(generatedRoot, "mts-core-provenance.json");
+const markerModulePath = join(generatedRoot, "mts-core-provenance.js");
 const lock = JSON.parse(readFileSync(lockPath, "utf8"));
 
 function run(command, args, cwd) {
@@ -76,11 +77,23 @@ function expectedMarker(treeDigest) {
   };
 }
 
+function markerModule(marker) {
+  return `export const MTS_CORE_PROVENANCE = Object.freeze(${JSON.stringify(marker, null, 2)});\n`;
+}
+
 function cacheIsValid() {
-  if (!existsSync(join(target, "public.js")) || !existsSync(markerPath)) return false;
+  if (
+    !existsSync(join(target, "public.js")) ||
+    !existsSync(markerPath) ||
+    !existsSync(markerModulePath)
+  ) return false;
   try {
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
-    return JSON.stringify(marker) === JSON.stringify(expectedMarker(treeSha256(target)));
+    const expected = expectedMarker(treeSha256(target));
+    return (
+      JSON.stringify(marker) === JSON.stringify(expected) &&
+      readFileSync(markerModulePath, "utf8") === markerModule(expected)
+    );
   } catch {
     return false;
   }
@@ -141,6 +154,7 @@ try {
 
   const marker = expectedMarker(treeSha256(target));
   writeFileSync(markerPath, `${JSON.stringify(marker, null, 2)}\n`, "utf8");
+  writeFileSync(markerModulePath, markerModule(marker), "utf8");
   assert.equal(cacheIsValid(), true, "generated @mts/core cache verification failed");
 
   console.log(`materialized ${lock.package.name}@${lock.package.version}`);
