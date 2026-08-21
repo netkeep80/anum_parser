@@ -1,3 +1,5 @@
+import { executeAbits } from "../generated/mts-core/public.js";
+import { MTS_CORE_PROVENANCE } from "../generated/mts-core-provenance.js";
 import { ABIT_REFS, AsetBuilder } from "./model.js";
 import { ABIT_PROFILE, parseAnum4 } from "./formats.js";
 import { carrierFromProvenance, decodeCarrierStream } from "./carrier.js";
@@ -13,10 +15,10 @@ export const DESERIALIZERS = [
   },
   {
     id: "anum-v0.4",
-    title: "ANUM v0.4: принятая стековая десериализация",
+    title: "ANUM: accepted @mts/core / MTS v0.10",
     status: "accepted",
     inputKinds: ["quaternary", "aset-carrier"],
-    description: "Raw и явно выбранный existing carrier сходятся в одной стековой машине: пустой ] возвращает ∞, непустой ] — ∞⟼value.",
+    description: "Строгий поток [ ] 1 0 исполняется exact-pinned @mts/core; локальная асеть и trace являются проекцией upstream execution.",
     deserialize: deserializeAccepted,
   },
   {
@@ -24,7 +26,7 @@ export const DESERIALIZERS = [
     title: "Эксперимент: группа возвращает value без ∞-обёртки",
     status: "experimental",
     inputKinds: ["quaternary"],
-    description: "Историко-экспериментальный контраст к ANUM v0.4: ] передаёт внутренний результат напрямую.",
+    description: "Историко-экспериментальный контраст к accepted @mts/core: ] передаёт внутренний результат напрямую.",
     deserialize: (artifact, options) => deserializeStack(artifact, {
       ...options,
       algorithm: "stack-group-value-v0",
@@ -53,28 +55,251 @@ export function availableDeserializers(kind) {
 }
 
 function deserializeAccepted(artifact, options = {}) {
-  const stackOptions = {
-    ...options,
-    algorithm: "anum-v0.4",
-    status: "accepted",
-    closeStrategy: "root-wrap",
-  };
   if (artifact?.format !== "mts-aset") {
-    return deserializeStack(artifact, stackOptions);
+    return deserializeAcceptedCore(artifact, options);
   }
 
   const carrierRef = carrierFromProvenance(artifact);
   const decoded = decodeCarrierStream(artifact, carrierRef);
-  const result = deserializeStack(parseAnum4(decoded.source), stackOptions);
+  const result = deserializeAcceptedCore(parseAnum4(decoded.source), options);
   result.aset.provenance.transport = {
     kind: "existing-carrier",
     carrierRef,
     readOnly: true,
-    decodedBeforeStackMachine: true,
+    decodedBeforeAcceptedRuntime: true,
     sourceAset: `${artifact.format}/${artifact.version}`,
     prefixCount: decoded.sequence.prefixes.length,
   };
   return result;
+}
+
+function deserializeAcceptedCore(artifact, options = {}) {
+  assertKind(artifact, "quaternary");
+  const { builder, refs, sourceSequence, abitSequence } = prepareAbits(artifact);
+  const physicalLinks = builder.addLinkSequence(refs, { role: "physical-abit-values" });
+  const carrier = builder.rootChain(refs, { sourceSequence: physicalLinks });
+  const initialVisibleLinkIds = builder.aset.links.map((link) => link.id);
+  const linkEvents = artifact.symbols.map(() => []);
+  const visibleAfter = artifact.symbols.map(() => []);
+  let sourceIndex = -1;
+
+  const algebra = {
+    root: "R",
+    linked: "L",
+    unlinked: "U",
+    link(start, end) {
+      if (sourceIndex < 0 || sourceIndex >= artifact.symbols.length) {
+        throw new Error("@mts/core requested a semantic link outside a source step");
+      }
+      const ensured = builder.ensureLink(start, end, {
+        label: `mts-core:${sourceIndex}:${linkEvents[sourceIndex].length}`,
+        tags: ["mts-core-accepted-step"],
+      });
+      linkEvents[sourceIndex].push({
+        start,
+        end,
+        ref: ensured.ref,
+        created: ensured.created,
+      });
+      return ensured.ref;
+    },
+  };
+
+  function* instrumentedAbits() {
+    for (let index = 0; index < artifact.symbols.length; index += 1) {
+      sourceIndex = index;
+      yield artifact.symbols[index];
+      visibleAfter[index] = builder.aset.links.map((link) => link.id);
+    }
+  }
+
+  let upstream;
+  try {
+    upstream = executeAbits(instrumentedAbits(), algebra);
+  } catch (error) {
+    if (error?.code === "unexpected-close" || error?.code === "unclosed-open") {
+      const index = error.code === "unexpected-close"
+        ? sourceIndex
+        : lastUnclosedOpen(artifact.symbols);
+      const token = error.code === "unexpected-close" ? "]" : "[";
+      throw transitionError(error.code, index, token, error.message);
+    }
+    throw error;
+  }
+
+  const { trace, frames } = projectAcceptedTrace(
+    artifact,
+    refs,
+    upstream.operations,
+    linkEvents,
+    initialVisibleLinkIds,
+    visibleAfter,
+  );
+  const rootFrame = frames[0];
+  const projectedResult = rootFrame.started ? rootFrame.current : "R";
+  if (projectedResult !== upstream.denotation) {
+    throw new Error(`accepted trace projection diverged from @mts/core: ${projectedResult} != ${upstream.denotation}`);
+  }
+
+  const resultSequence = builder.addLinkSequence(rootFrame.values, { role: "top-level-values" });
+  finish(builder, artifact, {
+    algorithm: "anum-v0.4",
+    status: "accepted",
+    sourceSequence,
+    abitSequence,
+    linkSequence: physicalLinks,
+    resultSequence,
+    carrier: carrier.head,
+    denotation: upstream.denotation,
+    semanticAuthority: {
+      kind: "exact-generated-package",
+      package: MTS_CORE_PROVENANCE.package,
+      version: MTS_CORE_PROVENANCE.packageVersion,
+      contract: MTS_CORE_PROVENANCE.contract,
+      conformance: MTS_CORE_PROVENANCE.conformance,
+      upstreamRepository: MTS_CORE_PROVENANCE.repository,
+      upstreamCommit: MTS_CORE_PROVENANCE.commit,
+      artifactSha256: MTS_CORE_PROVENANCE.artifactSha256,
+      generatedTreeSha256: MTS_CORE_PROVENANCE.treeSha256,
+      consumerLock: "anum-parser-mts-core-consumer-lock/v0.1",
+    },
+  });
+  maybeStore(builder, carrier.head, upstream.denotation, options);
+  trace.push(projectedSnapshot(
+    trace.length,
+    artifact.symbols.length,
+    "",
+    null,
+    "finish",
+    frames,
+    [],
+    [],
+    builder.aset.links.map((link) => link.id),
+    `Результат accepted @mts/core: ${upstream.denotation}`,
+  ));
+  return { aset: builder.finish(), trace, result: upstream.denotation, carrier: carrier.head };
+}
+
+function projectAcceptedTrace(artifact, refs, operations, linkEvents, initialVisibleLinkIds, visibleAfter) {
+  if (operations.length !== artifact.symbols.length) {
+    throw new Error("@mts/core operation count does not match validated abit sequence");
+  }
+  const trace = [];
+  const frames = [newFrame(null)];
+  trace.push(projectedSnapshot(
+    0,
+    -1,
+    "",
+    null,
+    "start",
+    frames,
+    [],
+    [],
+    initialVisibleLinkIds,
+    "Source и carrier загружены; accepted @mts/core execution ещё не начато",
+  ));
+
+  for (let index = 0; index < artifact.symbols.length; index += 1) {
+    const token = artifact.symbols[index];
+    const ref = refs[index];
+    const events = linkEvents[index];
+    let eventIndex = 0;
+    const produced = [];
+    const reused = [];
+
+    const consume = (start, end) => {
+      const event = events[eventIndex];
+      eventIndex += 1;
+      if (!event) throw new Error(`missing @mts/core link event at source index ${index}`);
+      if (event.start !== start || event.end !== end) {
+        throw new Error(`unexpected @mts/core link event at ${index}: ${event.start}->${event.end}, expected ${start}->${end}`);
+      }
+      const target = event.created ? produced : reused;
+      if (!target.includes(event.ref)) target.push(event.ref);
+      return event.ref;
+    };
+
+    if (token === "[") {
+      if (operations[index] !== "OPEN") throw new Error(`expected OPEN at ${index}`);
+      frames.push(newFrame(index));
+      assertEventsConsumed(events, eventIndex, index);
+      trace.push(projectedSnapshot(trace.length, index, token, ref, "open", frames, produced, reused,
+        visibleAfter[index], "@mts/core открыл новый контекст от R"));
+      continue;
+    }
+
+    if (token === "]") {
+      if (operations[index] !== "CLOSE") throw new Error(`expected CLOSE at ${index}`);
+      if (frames.length === 1) throw new Error("trace projection received impossible close");
+      const inner = frames.pop();
+      let returned = inner.started ? inner.current : "R";
+      if (inner.started) returned = consume("R", returned);
+      appendProjected(frames.at(-1), returned, consume);
+      assertEventsConsumed(events, eventIndex, index);
+      trace.push(projectedSnapshot(trace.length, index, token, ref, "close:mts-core", frames, produced, reused,
+        visibleAfter[index], `@mts/core вернул из группы ${returned}`));
+      continue;
+    }
+
+    if (operations[index] !== "VALUE") throw new Error(`expected VALUE at ${index}`);
+    appendProjected(frames.at(-1), ref, consume);
+    assertEventsConsumed(events, eventIndex, index);
+    trace.push(projectedSnapshot(trace.length, index, token, ref, "value", frames, produced, reused,
+      visibleAfter[index], `@mts/core принял связь-абит ${ref}`));
+  }
+
+  return { trace, frames };
+}
+
+function appendProjected(frame, value, consume) {
+  frame.values.push(value);
+  if (!frame.started) {
+    frame.current = value;
+    frame.started = true;
+    return;
+  }
+  frame.current = consume(frame.current, value);
+}
+
+function assertEventsConsumed(events, eventIndex, sourceIndex) {
+  if (eventIndex !== events.length) {
+    throw new Error(`unconsumed @mts/core link events at source index ${sourceIndex}`);
+  }
+}
+
+function projectedSnapshot(stepIndex, sourceIndex, token, resolved, operation, frames, producedLinks, reusedLinks, visibleLinkIds, note) {
+  const frame = frames.at(-1);
+  return {
+    step: stepIndex,
+    sourceIndex,
+    token,
+    resolved,
+    operation,
+    depth: frames.length - 1,
+    top: frames.length - 1,
+    current: frame.started ? frame.current : "R",
+    values: [...frame.values],
+    stack: frames.map((item, level) => ({
+      level,
+      openIndex: item.openIndex,
+      current: item.started ? item.current : "R",
+      started: item.started,
+      values: [...item.values],
+    })),
+    producedLinks: [...producedLinks],
+    reusedLinks: [...reusedLinks],
+    visibleLinkIds: [...visibleLinkIds],
+    note,
+  };
+}
+
+function lastUnclosedOpen(symbols) {
+  const stack = [];
+  for (let index = 0; index < symbols.length; index += 1) {
+    if (symbols[index] === "[") stack.push(index);
+    if (symbols[index] === "]" && stack.length) stack.pop();
+  }
+  return stack.at(-1) ?? -1;
 }
 
 function deserializeStringFlat(artifact, options = {}) {
@@ -134,6 +359,9 @@ function deserializeAbitFlat(artifact, options = {}) {
 
 function deserializeStack(artifact, options = {}) {
   assertKind(artifact, "quaternary");
+  if (options.status === "accepted") {
+    throw new Error("local deserializeStack is experimental-only; accepted execution must use @mts/core");
+  }
   const { builder, refs, sourceSequence, abitSequence } = prepareAbits(artifact);
   const physicalLinks = builder.addLinkSequence(refs, { role: "physical-abit-values" });
   const carrier = builder.rootChain(refs, { sourceSequence: physicalLinks });
@@ -141,7 +369,7 @@ function deserializeStack(artifact, options = {}) {
   const frames = [newFrame(null)];
 
   trace.push(snapshot(builder, trace.length, -1, "", null, "start", frames, [], [],
-    "Исходная запись и её carrier загружены; выполнение десериализатора ещё не начато"));
+    "Исходная запись и её carrier загружены; experimental execution ещё не начато"));
 
   for (let index = 0; index < artifact.symbols.length; index += 1) {
     const token = artifact.symbols[index];
@@ -157,20 +385,12 @@ function deserializeStack(artifact, options = {}) {
         throw transitionError("unexpected-close", index, token, "Нет открытого контекста для ]");
       }
       const inner = frames.pop();
-      let returned = inner.started ? inner.current : "R";
+      const returned = inner.started ? inner.current : "R";
       const produced = [];
       const reused = [];
-      if (options.closeStrategy === "root-wrap" && inner.started) {
-        const ensured = builder.ensureLink("R", returned, {
-          label: `close-wrap:${index}`,
-          tags: ["sequence-group-close"],
-        });
-        returned = ensured.ref;
-        recordEnsured(ensured, produced, reused);
-      }
       appendValue(builder, frames.at(-1), returned, produced, reused, `close:${index}`);
       trace.push(snapshot(builder, trace.length, index, token, ref, `close:${options.closeStrategy}`,
-        frames, produced, reused, `Группа вернула ${returned}`));
+        frames, produced, reused, `Experimental группа вернула ${returned}`));
       continue;
     }
 
@@ -178,7 +398,7 @@ function deserializeStack(artifact, options = {}) {
     const reused = [];
     appendValue(builder, frames.at(-1), ref, produced, reused, `value:${index}`);
     trace.push(snapshot(builder, trace.length, index, token, ref, "value", frames, produced, reused,
-      `Добавить связь-абит ${ref} в текущий контекст`));
+      `Добавить связь-абит ${ref} в experimental контекст`));
   }
 
   if (frames.length !== 1) {
@@ -201,7 +421,7 @@ function deserializeStack(artifact, options = {}) {
   });
   maybeStore(builder, carrier.head, result, options);
   trace.push(snapshot(builder, trace.length, artifact.symbols.length, "", null, "finish", frames, [], [],
-    `Результат верхнего контекста: ${result}`));
+    `Experimental результат верхнего контекста: ${result}`));
   return { aset: builder.finish(), trace, result, carrier: carrier.head };
 }
 
@@ -308,6 +528,7 @@ function finish(builder, artifact, data) {
     status: data.status ?? "experimental",
     deserializer: data.algorithm,
     traceVersion: "0.3",
+    ...(data.semanticAuthority ? { semanticAuthority: data.semanticAuthority } : {}),
     representations: {
       sourceSequence: data.sourceSequence,
       ...(data.abitSequence ? { abitSequence: data.abitSequence } : {}),
