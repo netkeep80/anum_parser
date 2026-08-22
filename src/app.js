@@ -31,6 +31,7 @@ const state = {
   visualModel: null,
   physicalState: null,
   selectedLinkId: null,
+  graphWarning: null,
 };
 const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
@@ -159,7 +160,8 @@ function run() {
     }
     state.debugStep = lastDebugStep();
     render();
-    showStatus("Готово", "ok");
+    if (state.graphWarning) showStatus(state.graphWarning, "error");
+    else showStatus("Готово", "ok");
   } catch (error) { showError(error); }
 }
 
@@ -193,9 +195,11 @@ function render() {
 }
 
 function changeGraphView() {
+  clearStatus();
   state.graphView = ui.graphView.value === "3d" ? "3d" : "2d";
   renderGraph();
   renderDebugger();
+  if (state.graphWarning) showStatus(state.graphWarning, "error");
 }
 
 function currentDebugState() {
@@ -207,18 +211,30 @@ function renderGraph() {
   const aset = state.result?.aset;
   if (!aset) return;
   state.visualModel ??= buildVisualModel(aset);
+  state.graphWarning = null;
 
   if (state.graphView === "3d") {
-    destroyGraph(ui.graph);
-    state.physicalState ??= solveReadableLayout3d(state.visualModel);
-    create3dRenderer(ui.graph, state.visualModel, state.physicalState, {
-      debugState: currentDebugState(),
-      selectedLinkId: state.selectedLinkId,
-      onSelectLink: (linkId) => {
-        state.selectedLinkId = linkId;
-      },
-    });
-    set3dSelectedLink(ui.graph, state.selectedLinkId);
+    try {
+      destroyGraph(ui.graph);
+      state.physicalState ??= solveReadableLayout3d(state.visualModel);
+      create3dRenderer(ui.graph, state.visualModel, state.physicalState, {
+        debugState: currentDebugState(),
+        selectedLinkId: state.selectedLinkId,
+        onSelectLink: (linkId) => {
+          state.selectedLinkId = linkId;
+        },
+      });
+      set3dSelectedLink(ui.graph, state.selectedLinkId);
+    } catch (error) {
+      console.warn("3D renderer unavailable; falling back to structural 2D", error);
+      destroy3dRenderer(ui.graph);
+      state.graphView = "2d";
+      state.graphWarning = `3D недоступен: ${error?.message ?? error}. Включён структурный 2D.`;
+      renderAset(ui.graph, aset, {
+        layout: ui.graphLayout.value,
+        visualModel: state.visualModel,
+      });
+    }
   } else {
     destroy3dRenderer(ui.graph);
     renderAset(ui.graph, aset, {
