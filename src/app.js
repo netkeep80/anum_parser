@@ -6,6 +6,8 @@ import {
   create3dRenderer,
   destroy3dRenderer,
   fit3dRenderer,
+  set3dDebugState,
+  set3dSelectedLink,
   zoom3dRenderer,
 } from "./three-renderer.js";
 import { buildVisualModel } from "./visual-model.js";
@@ -28,6 +30,7 @@ const state = {
   graphView: "2d",
   visualModel: null,
   physicalState: null,
+  selectedLinkId: null,
 };
 const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
@@ -183,6 +186,7 @@ function render() {
   renderComparison();
   state.visualModel = buildVisualModel(aset);
   state.physicalState = null;
+  state.selectedLinkId = null;
   renderGraph();
   renderDebugger();
   refreshSerializers();
@@ -194,6 +198,11 @@ function changeGraphView() {
   renderDebugger();
 }
 
+function currentDebugState() {
+  const trace = state.result?.trace ?? [];
+  return trace.length > 0 ? trace[state.debugStep] ?? null : null;
+}
+
 function renderGraph() {
   const aset = state.result?.aset;
   if (!aset) return;
@@ -201,11 +210,17 @@ function renderGraph() {
 
   if (state.graphView === "3d") {
     destroyGraph(ui.graph);
-    state.physicalState = solvePhysicalLayout3d(state.visualModel);
-    create3dRenderer(ui.graph, state.visualModel, state.physicalState);
+    state.physicalState ??= solvePhysicalLayout3d(state.visualModel);
+    create3dRenderer(ui.graph, state.visualModel, state.physicalState, {
+      debugState: currentDebugState(),
+      selectedLinkId: state.selectedLinkId,
+      onSelectLink: (linkId) => {
+        state.selectedLinkId = linkId;
+      },
+    });
+    set3dSelectedLink(ui.graph, state.selectedLinkId);
   } else {
     destroy3dRenderer(ui.graph);
-    state.physicalState = null;
     renderAset(ui.graph, aset, {
       layout: ui.graphLayout.value,
       visualModel: state.visualModel,
@@ -276,7 +291,8 @@ function renderDebugger() {
     ui.debugCurrent.textContent = "Для импортированной асети пошагового состояния нет.";
     ui.debugStack.replaceChildren(textNode("Стек недоступен для этого входа."));
     ui.debugEffects.textContent = "—";
-    if (state.graphView === "2d") setGraphDebugState(ui.graph, null);
+    if (state.graphView === "3d") set3dDebugState(ui.graph, null);
+    else setGraphDebugState(ui.graph, null);
     updateTraceSelection();
     return;
   }
@@ -300,7 +316,8 @@ function renderDebugger() {
     `добавлено: ${(item.producedLinks ?? []).join(", ") || "—"}`,
     `переиспользовано: ${(item.reusedLinks ?? []).join(", ") || "—"}`,
   ].join("\n");
-  if (state.graphView === "2d") setGraphDebugState(ui.graph, item);
+  if (state.graphView === "3d") set3dDebugState(ui.graph, item);
+  else setGraphDebugState(ui.graph, item);
   updateTraceSelection();
 }
 
