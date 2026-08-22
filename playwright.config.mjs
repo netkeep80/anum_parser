@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/browser",
@@ -30,10 +30,8 @@ export default defineConfig({
     {
       name: "chromium-touch",
       use: {
+        ...devices["Pixel 5"],
         browserName: "chromium",
-        viewport: { width: 390, height: 844 },
-        hasTouch: true,
-        isMobile: true,
       },
     },
   ],
