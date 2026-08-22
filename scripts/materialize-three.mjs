@@ -16,6 +16,7 @@ const outputRoot = join(root, 'generated', 'vendor', 'three');
 
 const sources = [
   ['three.module.js', join(sourceRoot, 'build', 'three.module.js')],
+  ['three.core.js', join(sourceRoot, 'build', 'three.core.js')],
   ['addons/controls/OrbitControls.js', join(sourceRoot, 'examples', 'jsm', 'controls', 'OrbitControls.js')],
 ];
 
