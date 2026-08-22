@@ -162,7 +162,7 @@ test("Three renderer зависит от local package boundary, но не чи�
   assert.doesNotMatch(source, /https?:\/\//i);
 });
 
-test("UI сохраняет 2D default и явно переключает 2D/3D renderer lifecycle", async () => {
+test("UI сохраняет 2D default и явно переключает 2D/blueprint/3D renderer lifecycle", async () => {
   const [html, app] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../src/app.js", import.meta.url), "utf8"),
@@ -170,9 +170,14 @@ test("UI сохраняет 2D default и явно переключает 2D/3D 
 
   assert.match(html, /id="graphView"/);
   assert.match(html, /<option value="2d" selected>2D — структурная карта<\/option>/);
+  assert.match(html, /<option value="blueprint">2D — blueprint связей<\/option>/);
   assert.match(html, /<option value="3d">3D — механическая асеть<\/option>/);
   assert.match(app, /graphView:\s*"2d"/);
   assert.match(app, /state\.visualModel = buildVisualModel\(aset\)/);
+  assert.match(app, /createBlueprintRenderer\(ui\.graph, state\.visualModel,/);
+  assert.match(app, /destroyBlueprintRenderer\(ui\.graph\)/);
+  assert.match(app, /fitBlueprintRenderer\(ui\.graph\)/);
+  assert.match(app, /zoomBlueprintRenderer\(ui\.graph, factor\)/);
   assert.match(app, /solveReadableLayout3d\(state\.visualModel\)/);
   assert.match(
     app,
@@ -182,7 +187,9 @@ test("UI сохраняет 2D default и явно переключает 2D/3D 
   assert.match(app, /selectedLinkId:\s*state\.selectedLinkId/);
   assert.match(app, /destroy3dRenderer\(ui\.graph\)/);
   assert.match(app, /renderAset\(ui\.graph, aset,/);
-  assert.match(app, /ui\.graphLayout\.disabled = is3d/);
+  assert.match(app, /const is2d = state\.graphView === "2d"/);
+  assert.match(app, /ui\.graphLayout\.disabled = !is2d/);
+  assert.match(app, /ui\.graphPhysicsControls\.hidden = !is3d/);
 });
 
 test("browser Three import map остаётся exact-local и не использует remote Three CDN", async () => {
