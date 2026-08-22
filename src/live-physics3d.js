@@ -46,11 +46,29 @@ function hasDynamicNode(physicalModel) {
   return physicalModel.nodeIds.some((id) => id !== physicalModel.rootId);
 }
 
+function hasNode(simulation, nodeId) {
+  return simulation.physicalModel.nodeIds.includes(nodeId);
+}
+
 function enforceRootConstraint(simulation) {
   const rootId = simulation.physicalModel.rootId;
   if (rootId == null) return;
   simulation.positions[rootId] = zeroVec3();
   simulation.velocities[rootId] = zeroVec3();
+}
+
+function enforcePinnedConstraints(simulation) {
+  for (const [nodeId, requested] of simulation.pinnedPositions) {
+    if (!hasNode(simulation, nodeId) || nodeId === simulation.physicalModel.rootId) {
+      simulation.pinnedPositions.delete(nodeId);
+      continue;
+    }
+    const position = clampCoordinate3d(requested, simulation.options.coordinateBound);
+    simulation.pinnedPositions.set(nodeId, position);
+    simulation.positions[nodeId] = cloneVec3(position);
+    simulation.velocities[nodeId] = zeroVec3();
+  }
+  enforceRootConstraint(simulation);
 }
 
 function integrateLiveState3d(simulation, forces) {
@@ -60,6 +78,11 @@ function integrateLiveState3d(simulation, forces) {
   for (const id of physicalModel.nodeIds) {
     if (id === physicalModel.rootId) {
       simulation.positions[id] = zeroVec3();
+      simulation.velocities[id] = zeroVec3();
+      continue;
+    }
+    if (simulation.pinnedPositions.has(id)) {
+      simulation.positions[id] = cloneVec3(simulation.pinnedPositions.get(id));
       simulation.velocities[id] = zeroVec3();
       continue;
     }
@@ -88,7 +111,7 @@ function integrateLiveState3d(simulation, forces) {
     maxSpeed = Math.max(maxSpeed, normVec3(velocity));
   }
 
-  enforceRootConstraint(simulation);
+  enforcePinnedConstraints(simulation);
   return maxSpeed;
 }
 
@@ -114,6 +137,7 @@ function buildSnapshot(simulation, {
     tick: simulation.tick,
     awake: simulation.awake,
     stableTicks: simulation.stableTicks,
+    pinnedNodeIds: [...simulation.pinnedPositions.keys()],
     maxSpeed,
     energyDelta,
     potentialEnergy: potential.total,
@@ -135,13 +159,14 @@ export function createLivePhysicalSimulation3d(visualModel, options = {}) {
     positions: state.positions,
     velocities: state.velocities,
     options: normalized,
+    pinnedPositions: new Map(),
     awake: hasDynamicNode(physicalModel),
     stableTicks: 0,
     previousPotentialEnergy: potential.total,
     tick: 0,
     last: null,
   };
-  enforceRootConstraint(simulation);
+  enforcePinnedConstraints(simulation);
   simulation.last = buildSnapshot(simulation);
   return simulation;
 }
@@ -149,6 +174,7 @@ export function createLivePhysicalSimulation3d(visualModel, options = {}) {
 export function wakeLivePhysicalSimulation3d(simulation) {
   simulation.awake = hasDynamicNode(simulation.physicalModel);
   simulation.stableTicks = 0;
+  enforcePinnedConstraints(simulation);
   simulation.previousPotentialEnergy = physicalPotentialEnergy3d(
     simulation.physicalModel,
     simulation.positions,
@@ -167,8 +193,49 @@ export function sleepLivePhysicalSimulation3d(simulation) {
 
 export function setLivePhysicalSimulationOptions3d(simulation, patch = {}) {
   simulation.options = normalizePhysics3dOptions({ ...simulation.options, ...patch });
+  enforcePinnedConstraints(simulation);
   wakeLivePhysicalSimulation3d(simulation);
   return simulation.options;
+}
+
+export function pinLivePhysicalNode3d(simulation, nodeId, position) {
+  if (
+    !hasNode(simulation, nodeId)
+    || nodeId === simulation.physicalModel.rootId
+    || !isFiniteVec3(position)
+  ) return false;
+
+  const pinned = clampCoordinate3d(position, simulation.options.coordinateBound);
+  simulation.pinnedPositions.set(nodeId, pinned);
+  simulation.positions[nodeId] = cloneVec3(pinned);
+  simulation.velocities[nodeId] = zeroVec3();
+  wakeLivePhysicalSimulation3d(simulation);
+  return true;
+}
+
+export function movePinnedLivePhysicalNode3d(simulation, nodeId, position) {
+  if (!simulation.pinnedPositions.has(nodeId) || !isFiniteVec3(position)) return false;
+  const pinned = clampCoordinate3d(position, simulation.options.coordinateBound);
+  simulation.pinnedPositions.set(nodeId, pinned);
+  simulation.positions[nodeId] = cloneVec3(pinned);
+  simulation.velocities[nodeId] = zeroVec3();
+  wakeLivePhysicalSimulation3d(simulation);
+  return true;
+}
+
+export function releaseLivePhysicalNode3d(simulation, nodeId, velocity = null) {
+  if (!simulation.pinnedPositions.delete(nodeId)) return false;
+  if (isFiniteVec3(velocity)) {
+    simulation.velocities[nodeId] = clampMagnitude3d(velocity, simulation.options.maxVelocity);
+  } else {
+    simulation.velocities[nodeId] = zeroVec3();
+  }
+  wakeLivePhysicalSimulation3d(simulation);
+  return true;
+}
+
+export function isLivePhysicalNodePinned3d(simulation, nodeId) {
+  return simulation.pinnedPositions.has(nodeId);
 }
 
 export function stepLivePhysicalSimulation3d(simulation) {
@@ -177,6 +244,7 @@ export function stepLivePhysicalSimulation3d(simulation) {
     return simulation.last;
   }
 
+  enforcePinnedConstraints(simulation);
   const forceResult = computePhysicalForces3d(
     simulation.physicalModel,
     simulation.positions,
@@ -215,6 +283,7 @@ export function stepLivePhysicalSimulation3d(simulation) {
 }
 
 export function livePhysicalSimulationSnapshot3d(simulation) {
+  enforcePinnedConstraints(simulation);
   simulation.last = buildSnapshot(simulation, { stepped: false });
   return simulation.last;
 }
