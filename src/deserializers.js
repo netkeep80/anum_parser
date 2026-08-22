@@ -15,7 +15,7 @@ export const DESERIALIZERS = [
   },
   {
     id: "anum-v0.4",
-    title: "ANUM: accepted @mts/core / MTS v0.10",
+    title: "ANUM: accepted @mts/core / MTS v0.11",
     status: "accepted",
     inputKinds: ["quaternary", "aset-carrier"],
     description: "Строгий поток [ ] 1 0 исполняется exact-pinned @mts/core; локальная асеть и trace являются проекцией upstream execution.",
