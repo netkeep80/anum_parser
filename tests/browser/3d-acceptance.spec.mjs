@@ -299,7 +299,10 @@ test("touch viewport initializes 3D and picks exact root link", async ({ page },
   expect(point).not.toBeNull();
   await canvas.tap({ position: point });
   await expect.poll(() => selectedLink(page)).toBe("R");
-  expect((await page.viewportSize()).width).toBe(390);
+  const viewport = page.viewportSize();
+  expect(viewport?.width).toBeLessThan(500);
+  expect(await page.evaluate(() => navigator.maxTouchPoints)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => navigator.userAgent.includes("Mobile"))).toBe(true);
 });
 
 test("WebGL failure falls back to a usable structural 2D view", async ({}, testInfo) => {
