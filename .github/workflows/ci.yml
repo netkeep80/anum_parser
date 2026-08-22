@@ -17,8 +17,10 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
+      - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm run site:build
 
   mts-core-consumer:
     name: Verify accepted @mts/core consumer lock
