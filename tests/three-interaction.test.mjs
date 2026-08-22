@@ -153,10 +153,10 @@ test("debugger presentation не перекрашивает semantic node/spring
   assert.match(presentationSection, /debugHalo\.material\.color/);
 });
 
-test("app сохраняет settled physics и debugger step не перезапускает solver", async () => {
+test("app сохраняет settled physics/readability и debugger step не перезапускает world layout", async () => {
   const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 
-  assert.match(source, /state\.physicalState \?\?= solvePhysicalLayout3d\(state\.visualModel\)/);
+  assert.match(source, /state\.physicalState \?\?= solveReadableLayout3d\(state\.visualModel\)/);
   assert.match(source, /set3dDebugState\(ui\.graph, item\)/);
   assert.match(source, /selectedLinkId: state\.selectedLinkId/);
   assert.match(source, /onSelectLink: \(linkId\) =>/);
@@ -165,5 +165,5 @@ test("app сохраняет settled physics и debugger step не переза�
   const end = source.indexOf("function renderDebugSource", start);
   assert.ok(start >= 0 && end > start);
   const debuggerSection = source.slice(start, end);
-  assert.doesNotMatch(debuggerSection, /solvePhysicalLayout3d/);
+  assert.doesNotMatch(debuggerSection, /solvePhysicalLayout3d|solveReadableLayout3d/);
 });
