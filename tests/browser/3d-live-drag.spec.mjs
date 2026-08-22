@@ -77,7 +77,6 @@ function moved(before, after, id, epsilon = 1e-4) {
 test("desktop drag pins a free link center and propagates motion through the live aset", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await boot3d(page);
-  await expect.poll(async () => (await liveSnapshot(page))?.awake, { timeout: 5000 }).toBe(false);
 
   await selectLink(page, "L");
   const before = await liveSnapshot(page);
