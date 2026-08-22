@@ -1,0 +1,76 @@
+{
+  "schema": "anum-parser-mts-differential/v0.2",
+  "issue": 46,
+  "currentConsumer": {
+    "lockSchema": "anum-parser-mts-core-consumer-lock/v0.1",
+    "repository": "netkeep80/anum_docs",
+    "commit": "6b7f616c7b275310aebdbe998da13c5811c91391",
+    "contract": "mts-contract/v0.11",
+    "conformance": "mts-conformance/v0.11",
+    "package": "@mts/core@0.10.0",
+    "artifactSha256": "6b4dbd701f46a6a339e20b892b8a5d9478bb40a9392415899291eb0fe30ddf9c"
+  },
+  "previousAcceptedConsumer": {
+    "evidence": "contracts/mts-v010-differential.json",
+    "immutable": true,
+    "repository": "netkeep80/anum_docs",
+    "commit": "957c818d82bd3211f2a59547fff28e8ed0ec4331",
+    "contract": "mts-contract/v0.10",
+    "conformance": "mts-conformance/v0.10",
+    "package": "@mts/core@0.10.0",
+    "artifactSha256": "0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007"
+  },
+  "acceptedSemanticDelta": {
+    "status": "accepted-classified",
+    "observableSemanticDelta": true,
+    "topLevelBinding": "TopBind(R,S)",
+    "topLevelDotResolution": "resolve_top(.) = R",
+    "dotPair": {
+      "source": "..",
+      "exactOccurrenceCount": 2,
+      "resolvedValuesAtRoot": ["R", "R"],
+      "semanticFoldAtRoot": "Pair(R,R) = R"
+    },
+    "nestedExplicitBinding": "nearest structural A : E binds dot occurrences in E",
+    "qBoundary": {
+      "alphabet": ["[", "]", "1", "0"],
+      "dotAdmitted": false,
+      "colonAdmitted": false,
+      "contextualBinderInheritanceIntoQ": false
+    },
+    "consumerImpact": "accepted-v0.11-contextual-delta-outside-anum4-q-surface"
+  },
+  "semanticExecution": {
+    "localPath": "parseAnum4 -> anum-v0.4 -> current @mts/core.executeAbits",
+    "currentUpstreamPath": "validated abits -> accepted v0.11 @mts/core.executeAbits",
+    "previousUpstreamPath": "validated abits -> accepted v0.10 @mts/core.executeAbits",
+    "acceptedCorpus": "examples/cases.json",
+    "acceptedCaseCount": 33,
+    "status": "current-vs-previous-parity-required"
+  },
+  "algorithmFailures": {
+    "status": "current-vs-previous-parity-required",
+    "mapping": "StreamError.code must remain identical on shared Q failure corpus"
+  },
+  "sourceFormatBoundary": {
+    "classification": "presentation-boundary-not-semantic-mismatch",
+    "localAnum4": "strict-literal-abits-only",
+    "upstreamRawQuaternary": "whitespace-and-comments-normalized",
+    "productionMigrationTarget": "strict local .anum4 validation -> exact abit sequence -> accepted v0.11 @mts/core.executeAbits"
+  },
+  "packageBoundary": {
+    "rootImportRequired": true,
+    "deepImportRejected": true,
+    "packageVersionDistinguishesMtsRelease": false,
+    "releaseIdentity": "exact source SHA + accepted contract/conformance + artifact SHA256"
+  },
+  "proof": {
+    "state": "proved-by-executable-ci",
+    "currentArtifactDigestVerified": true,
+    "previousArtifactDigestVerified": true,
+    "sharedQSemanticParityRequired": true,
+    "sharedQFailureParityRequired": true,
+    "acceptedV011DeltaClassified": true,
+    "previousEvidencePreserved": true
+  }
+}
