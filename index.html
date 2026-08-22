@@ -78,6 +78,14 @@
     <section class="panel export-panel"><div class="section-title"><div><p class="eyebrow">Импорт / экспорт</p><h2>Сериализовать результат</h2></div><span class="hint">Сериализатор выбирается отдельно от формата входа и десериализатора.</span></div><div class="export-controls"><select id="serializer"></select><button id="save">Скачать</button></div><details><summary>Показать `.aset.json`</summary><pre id="asetJson"></pre></details></section>
   </main>
   <footer><span>anum_parser · сначала различения</span><span id="appVersion" class="app-version" aria-label="Версия приложения">v…</span><a href="./docs/formats.md">Форматы</a><a href="./docs/history.md">История</a><a href="./docs/architecture.md">Архитектура</a></footer>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.33.1/dist/cytoscape.min.js" crossorigin="anonymous"></script>
   <script type="module" src="./src/app.js"></script>
 </body>
