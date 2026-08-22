@@ -1,12 +1,16 @@
 import { detectFormat, downloadText, parseArtifact, readUtf8File } from "./formats.js";
 import { availableDeserializers, deserializerById } from "./deserializers.js";
 import { availableSerializers, serializerById } from "./serializers.js";
+import { DEFAULT_PHYSICS3D_OPTIONS } from "./physics3d.js";
 import { solveReadableLayout3d } from "./readable-layout3d.js";
 import {
   create3dRenderer,
   destroy3dRenderer,
   fit3dRenderer,
+  reset3dLivePhysics,
   set3dDebugState,
+  set3dLivePhysicsOptions,
+  set3dLivePhysicsPaused,
   set3dSelectedLink,
   zoom3dRenderer,
 } from "./three-renderer.js";
@@ -32,12 +36,21 @@ const state = {
   physicalState: null,
   selectedLinkId: null,
   graphWarning: null,
+  physicsOptions: {
+    charge: DEFAULT_PHYSICS3D_OPTIONS.charge,
+    springStiffness: DEFAULT_PHYSICS3D_OPTIONS.springStiffness,
+    damping: DEFAULT_PHYSICS3D_OPTIONS.damping,
+  },
+  physicsPaused: false,
 };
 const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
   "run", "load", "file", "serializer", "save", "status", "summary", "symbols",
   "abits", "linkSequence", "rootChains", "storedAnums", "trace", "comparison",
   "asetJson", "graph", "graphView", "graphLayout", "graphFit", "graphZoomIn", "graphZoomOut", "appVersion",
+  "graphPhysicsControls", "graphCharge", "graphChargeValue", "graphSpringStiffness",
+  "graphSpringStiffnessValue", "graphDamping", "graphDampingValue", "graphPhysicsPause",
+  "graphPhysicsReset",
   "debugFirst", "debugPrev", "debugRange", "debugNext", "debugLast", "debugStep",
   "debugSource", "debugCurrent", "debugStack", "debugEffects",
 ];
@@ -76,11 +89,17 @@ async function boot() {
   ui.graphFit.addEventListener("click", fitCurrentGraph);
   ui.graphZoomIn.addEventListener("click", () => zoomCurrentGraph(1.28));
   ui.graphZoomOut.addEventListener("click", () => zoomCurrentGraph(1 / 1.28));
+  ui.graphCharge.addEventListener("input", () => changePhysicsOption("charge", ui.graphCharge));
+  ui.graphSpringStiffness.addEventListener("input", () => changePhysicsOption("springStiffness", ui.graphSpringStiffness));
+  ui.graphDamping.addEventListener("input", () => changePhysicsOption("damping", ui.graphDamping));
+  ui.graphPhysicsPause.addEventListener("click", togglePhysicsPause);
+  ui.graphPhysicsReset.addEventListener("click", resetCurrentPhysics);
   ui.debugFirst.addEventListener("click", () => setDebugStep(0));
   ui.debugPrev.addEventListener("click", () => setDebugStep(state.debugStep - 1));
   ui.debugNext.addEventListener("click", () => setDebugStep(state.debugStep + 1));
   ui.debugLast.addEventListener("click", () => setDebugStep(lastDebugStep()));
   ui.debugRange.addEventListener("input", () => setDebugStep(Number(ui.debugRange.value)));
+  renderPhysicsControls();
   selectSample();
   run();
 }
@@ -218,6 +237,7 @@ function renderGraph() {
       destroyGraph(ui.graph);
       state.physicalState ??= solveReadableLayout3d(state.visualModel);
       create3dRenderer(ui.graph, state.visualModel, state.physicalState, {
+        physics: state.physicsOptions,
         debugState: currentDebugState(),
         selectedLinkId: state.selectedLinkId,
         onSelectLink: (linkId) => {
@@ -225,6 +245,7 @@ function renderGraph() {
         },
       });
       set3dSelectedLink(ui.graph, state.selectedLinkId);
+      set3dLivePhysicsPaused(ui.graph, state.physicsPaused);
     } catch (error) {
       console.warn("3D renderer unavailable; falling back to structural 2D", error);
       destroy3dRenderer(ui.graph);
@@ -252,7 +273,46 @@ function updateGraphControls() {
   ui.graphLayout.title = is3d
     ? "Раскладки Cytoscape относятся только к структурному 2D-представлению"
     : "Алгоритм авторазвёртки 2D";
+  ui.graphPhysicsControls.hidden = !is3d;
   ui.graph.dataset.viewMode = state.graphView;
+  renderPhysicsControls();
+}
+
+function renderPhysicsControls() {
+  ui.graphCharge.value = String(state.physicsOptions.charge);
+  ui.graphChargeValue.textContent = Number(state.physicsOptions.charge).toFixed(2);
+  ui.graphSpringStiffness.value = String(state.physicsOptions.springStiffness);
+  ui.graphSpringStiffnessValue.textContent = Number(state.physicsOptions.springStiffness).toFixed(3);
+  ui.graphDamping.value = String(state.physicsOptions.damping);
+  ui.graphDampingValue.textContent = Number(state.physicsOptions.damping).toFixed(2);
+  ui.graphPhysicsPause.textContent = state.physicsPaused ? "Продолжить" : "Пауза";
+  const active = state.graphView === "3d";
+  ui.graphCharge.disabled = !active;
+  ui.graphSpringStiffness.disabled = !active;
+  ui.graphDamping.disabled = !active;
+  ui.graphPhysicsPause.disabled = !active;
+  ui.graphPhysicsReset.disabled = !active;
+}
+
+function changePhysicsOption(key, input) {
+  const value = Number(input.value);
+  if (!Number.isFinite(value)) return;
+  state.physicsOptions = { ...state.physicsOptions, [key]: value };
+  if (state.graphView === "3d") set3dLivePhysicsOptions(ui.graph, { [key]: value });
+  renderPhysicsControls();
+}
+
+function togglePhysicsPause() {
+  if (state.graphView !== "3d") return;
+  state.physicsPaused = !state.physicsPaused;
+  set3dLivePhysicsPaused(ui.graph, state.physicsPaused);
+  renderPhysicsControls();
+}
+
+function resetCurrentPhysics() {
+  if (state.graphView !== "3d") return;
+  reset3dLivePhysics(ui.graph);
+  renderPhysicsControls();
 }
 
 function fitCurrentGraph() {
