@@ -11,6 +11,11 @@ import {
   subtractVec3,
 } from "./geometry3d.js";
 import {
+  auditReadability3d,
+  buildLodPlan3d,
+  buildPerformanceBudget3d,
+} from "./readability3d.js";
+import {
   normalizeVisualDebugState,
   visualDebugFlags,
 } from "./visual-model.js";
@@ -198,16 +203,39 @@ export function resolvePickedLinkId3d(intersections) {
   return null;
 }
 
+export function lodArcSampleIndices3d(
+  pointCount,
+  samplesPerTurn,
+  baseSamplesPerTurn = DEFAULT_SAMPLES_PER_TURN,
+) {
+  const count = Math.max(0, Math.floor(Number(pointCount) || 0));
+  if (count === 0) return [];
+  if (count === 1) return [0];
+  const requested = Math.max(1, Math.floor(Number(samplesPerTurn) || 1));
+  const base = Math.max(1, Math.floor(Number(baseSamplesPerTurn) || DEFAULT_SAMPLES_PER_TURN));
+  const stride = Math.max(1, Math.ceil(base / requested));
+  const indices = [0];
+  for (let index = stride; index < count - 1; index += stride) indices.push(index);
+  if (indices.at(-1) !== count - 1) indices.push(count - 1);
+  return indices;
+}
+
 function threeVector(point) {
   return new THREE.Vector3(point.x, point.y, point.z);
 }
 
+function sphereGeometry(node, segments = 16) {
+  const widthSegments = Math.max(6, Math.floor(segments));
+  const heightSegments = Math.max(4, Math.floor(widthSegments * 0.75));
+  return new THREE.SphereGeometry(node.radius, widthSegments, heightSegments);
+}
+
 function addNodeMesh(scene, node, options) {
-  const geometry = new THREE.SphereGeometry(node.radius, 16, 12);
+  const geometry = sphereGeometry(node, options.nodeSegments ?? 16);
   const material = new THREE.MeshBasicMaterial({ color: node.color });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(threeVector(node.position));
-  mesh.userData = { kind: "link-center", linkId: node.linkId, root: node.root };
+  mesh.userData = { kind: "link-center", linkId: node.linkId, root: node.root, lodTier: null };
   scene.add(mesh);
 
   let rootHalo = null;
@@ -246,18 +274,25 @@ function addNodeMesh(scene, node, options) {
   return { mesh, rootHalo, debugHalo };
 }
 
-function addArcLine(scene, arc) {
-  if (arc.points.length < 2) return null;
-  const geometry = new THREE.BufferGeometry().setFromPoints(arc.points.map(threeVector));
+function arcGeometry(arc, indices = null) {
+  const selectedIndices = indices ?? arc.points.map((_, index) => index);
+  const points = selectedIndices.map((index) => threeVector(arc.points[index]));
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const from = new THREE.Color(arc.colorFrom);
   const to = new THREE.Color(arc.colorTo);
+  const denominator = Math.max(1, arc.points.length - 1);
   const colors = [];
-  for (let index = 0; index < arc.points.length; index += 1) {
-    const t = arc.points.length === 1 ? 0 : index / (arc.points.length - 1);
-    const color = from.clone().lerp(to, t);
+  for (const index of selectedIndices) {
+    const color = from.clone().lerp(to, index / denominator);
     colors.push(color.r, color.g, color.b);
   }
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  return geometry;
+}
+
+function addArcLine(scene, arc) {
+  if (arc.points.length < 2) return null;
+  const geometry = arcGeometry(arc);
   const material = new THREE.LineBasicMaterial({ vertexColors: true });
   const line = new THREE.Line(geometry, material);
   line.userData = {
@@ -267,9 +302,27 @@ function addArcLine(scene, arc) {
     role: arc.role,
     self: arc.self,
     forceSpring: arc.forceSpring,
+    lodTier: null,
   };
   scene.add(line);
   return line;
+}
+
+function replaceArcLineGeometry(line, arc, samplesPerTurn) {
+  const indices = lodArcSampleIndices3d(
+    arc.points.length,
+    samplesPerTurn,
+    DEFAULT_SAMPLES_PER_TURN,
+  );
+  const geometry = arcGeometry(arc, indices);
+  line.geometry.dispose();
+  line.geometry = geometry;
+}
+
+function replaceNodeGeometry(mesh, node, nodeSegments) {
+  const geometry = sphereGeometry(node, nodeSegments);
+  mesh.geometry.dispose();
+  mesh.geometry = geometry;
 }
 
 function addEndArrow(scene, arc, options) {
@@ -364,6 +417,62 @@ function renderState(state) {
   updateLabelPositions(state);
 }
 
+function lodDistancesByLinkId(state) {
+  return Object.fromEntries(state.data.nodes.map((node) => {
+    const mesh = state.nodeMeshes.get(node.linkId);
+    return [
+      node.linkId,
+      mesh ? mesh.position.distanceTo(state.camera.position) : Infinity,
+    ];
+  }));
+}
+
+function applyThreeLodState(state) {
+  const presentation = state.presentation ?? buildThreePresentationState(
+    state.visualModel,
+    state.debugState,
+    state.selectedLinkId,
+    state.hoveredLinkId,
+  );
+  const plan = buildLodPlan3d(
+    state.data,
+    presentation,
+    lodDistancesByLinkId(state),
+    state.options.lod,
+  );
+  const nodePlan = new Map(plan.nodes.map((node) => [node.linkId, node]));
+  const arcPlan = new Map(plan.arcs.map((arc) => [arc.arcId, arc]));
+  const nodePresentation = new Map(presentation.nodes.map((node) => [node.linkId, node]));
+
+  for (const node of state.data.nodes) {
+    const current = nodePlan.get(node.linkId);
+    const mesh = state.nodeMeshes.get(node.linkId);
+    if (current && mesh && mesh.userData.lodTier !== current.tier) {
+      replaceNodeGeometry(mesh, node, current.nodeSegments);
+      mesh.userData.lodTier = current.tier;
+    }
+    const label = state.labels.get(node.linkId);
+    const presentationNode = nodePresentation.get(node.linkId);
+    if (label && current && presentationNode) {
+      label.style.display = presentationNode.visible
+        && (presentationNode.labelVisible || current.showLabel)
+        ? "block"
+        : "none";
+    }
+  }
+
+  for (const arc of state.data.arcs) {
+    const current = arcPlan.get(arc.arcId);
+    const line = state.arcLines.get(arc.arcId);
+    if (!current || !line || line.userData.lodTier === current.tier) continue;
+    replaceArcLineGeometry(line, arc, current.samplesPerTurn);
+    line.userData.lodTier = current.tier;
+  }
+
+  state.lodPlan = plan;
+  return plan;
+}
+
 function applyThreePresentationState(state) {
   const presentation = buildThreePresentationState(
     state.visualModel,
@@ -402,6 +511,7 @@ function applyThreePresentationState(state) {
   }
 
   state.presentation = presentation;
+  applyThreeLodState(state);
   renderState(state);
   return presentation;
 }
@@ -416,7 +526,10 @@ function configureControls(state) {
   controls.minDistance = 0.2;
   controls.maxDistance = 500;
   state.renderer.domElement.style.touchAction = "none";
-  const onChange = () => renderState(state);
+  const onChange = () => {
+    applyThreeLodState(state);
+    renderState(state);
+  };
   controls.addEventListener("change", onChange);
   state.controls = controls;
   state.controlsChangeListener = onChange;
@@ -507,6 +620,7 @@ export function fit3dRenderer(container) {
   state.controls?.target.copy(state.target);
   state.controls?.update();
   state.camera.lookAt(state.target);
+  applyThreeLodState(state);
   renderState(state);
   return true;
 }
@@ -525,6 +639,7 @@ export function zoom3dRenderer(container, factor) {
   state.controls?.target.copy(state.target);
   state.controls?.update();
   state.camera.lookAt(state.target);
+  applyThreeLodState(state);
   renderState(state);
   return true;
 }
@@ -548,9 +663,35 @@ export function get3dSelectedLink(container) {
   return rendererStates.get(container)?.selectedLinkId ?? null;
 }
 
+export function get3dPerformanceSnapshot(container) {
+  const state = rendererStates.get(container);
+  if (!state) return null;
+  const renderedArcVertices = [...state.arcLines.values()].reduce(
+    (sum, line) => sum + (line.geometry.getAttribute("position")?.count ?? 0),
+    0,
+  );
+  return structuredClone({
+    readabilityAudit: state.readabilityAudit,
+    performanceBudget: state.performanceBudget,
+    lodPlan: state.lodPlan,
+    renderedArcVertices,
+  });
+}
+
 export function create3dRenderer(container, visualModel, physicalState, options = {}) {
   destroy3dRenderer(container);
   const data = buildThreeSceneData(visualModel, physicalState, options);
+  const readabilityAudit = auditReadability3d(
+    physicalPositions(physicalState),
+    data,
+    options.readability,
+  );
+  const performanceBudget = buildPerformanceBudget3d({
+    visualModel,
+    physicalState,
+    sceneData: data,
+    readabilityAudit,
+  }, options.budgets);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(options.background ?? DEFAULT_BACKGROUND);
 
@@ -621,6 +762,9 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     selectedLinkId: options.selectedLinkId ?? null,
     hoveredLinkId: null,
     presentation: null,
+    lodPlan: null,
+    readabilityAudit,
+    performanceBudget,
   };
   rendererStates.set(container, state);
   configureControls(state);

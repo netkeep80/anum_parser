@@ -1,7 +1,7 @@
 import { detectFormat, downloadText, parseArtifact, readUtf8File } from "./formats.js";
 import { availableDeserializers, deserializerById } from "./deserializers.js";
 import { availableSerializers, serializerById } from "./serializers.js";
-import { solvePhysicalLayout3d } from "./physics3d.js";
+import { solveReadableLayout3d } from "./readable-layout3d.js";
 import {
   create3dRenderer,
   destroy3dRenderer,
@@ -210,7 +210,7 @@ function renderGraph() {
 
   if (state.graphView === "3d") {
     destroyGraph(ui.graph);
-    state.physicalState ??= solvePhysicalLayout3d(state.visualModel);
+    state.physicalState ??= solveReadableLayout3d(state.visualModel);
     create3dRenderer(ui.graph, state.visualModel, state.physicalState, {
       debugState: currentDebugState(),
       selectedLinkId: state.selectedLinkId,
