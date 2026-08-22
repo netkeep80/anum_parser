@@ -105,6 +105,7 @@ async function rendererActive(page) {
 }
 
 async function rootScreenPoint(page) {
+  await page.locator("#graph").scrollIntoViewIfNeeded();
   return page.evaluate(() => {
     const graph = document.getElementById("graph");
     const canvas = graph.querySelector(":scope > canvas");
