@@ -15,6 +15,7 @@ import {
   movePinnedLivePhysicalNode3d,
   pinLivePhysicalNode3d,
   releaseLivePhysicalNode3d,
+  setLivePhysicalSimulationOptions3d,
   stepLivePhysicalSimulation3d,
 } from "./live-physics3d.js";
 import {
@@ -197,7 +198,6 @@ export function buildThreePresentationState(
     arcId: arc.id,
     visible: visibleIds.has(arc.semanticSource) && visibleIds.has(arc.semanticTarget),
   }));
-
   return { debugState: normalized, nodes: nodeStates, arcs: arcStates };
 }
 
@@ -569,16 +569,24 @@ function syncLiveSceneData(state) {
   return nextData;
 }
 
+function cancelLiveFrame(state) {
+  if (state.animationFrame != null && typeof globalThis.cancelAnimationFrame === "function") {
+    globalThis.cancelAnimationFrame(state.animationFrame);
+  }
+  state.animationFrame = null;
+}
+
 function requestLiveFrame(state) {
   if (
     state.destroyed
+    || state.physicsPaused
     || state.animationFrame != null
     || typeof globalThis.requestAnimationFrame !== "function"
   ) return;
 
   state.animationFrame = globalThis.requestAnimationFrame(() => {
     state.animationFrame = null;
-    if (state.destroyed) return;
+    if (state.destroyed || state.physicsPaused) return;
 
     if (state.liveSimulation?.awake) {
       stepLivePhysicalSimulation3d(state.liveSimulation);
@@ -920,18 +928,60 @@ export function get3dSelectedLink(container) {
   return rendererStates.get(container)?.selectedLinkId ?? null;
 }
 
-export function get3dLivePhysicsSnapshot(container) {
-  const state = rendererStates.get(container);
+function livePhysicsSnapshot(state) {
   if (!state?.liveSimulation) return null;
   return {
     tick: state.liveSimulation.tick,
     awake: state.liveSimulation.awake,
+    paused: state.physicsPaused,
     draggingLinkId: state.draggingLinkId,
     pinnedNodeIds: [...state.liveSimulation.pinnedPositions.keys()],
     positions: structuredClone(state.liveSimulation.positions),
     velocities: structuredClone(state.liveSimulation.velocities),
     options: { ...state.liveSimulation.options, depths: undefined, initialPositions: undefined, initialVelocities: undefined },
   };
+}
+
+export function get3dLivePhysicsSnapshot(container) {
+  return livePhysicsSnapshot(rendererStates.get(container));
+}
+
+export function set3dLivePhysicsOptions(container, patch = {}) {
+  const state = rendererStates.get(container);
+  if (!state?.liveSimulation) return null;
+  setLivePhysicalSimulationOptions3d(state.liveSimulation, patch);
+  if (!state.physicsPaused) requestLiveFrame(state);
+  return livePhysicsSnapshot(state);
+}
+
+export function set3dLivePhysicsPaused(container, paused) {
+  const state = rendererStates.get(container);
+  if (!state?.liveSimulation) return false;
+  state.physicsPaused = Boolean(paused);
+  if (state.physicsPaused) cancelLiveFrame(state);
+  else requestLiveFrame(state);
+  return state.physicsPaused;
+}
+
+export function reset3dLivePhysics(container) {
+  const state = rendererStates.get(container);
+  if (!state?.liveSimulation) return null;
+  state.pointerDown = null;
+  releasePointerDrag(state);
+  cancelLiveFrame(state);
+
+  const liveSimulation = createLivePhysicalSimulation3d(state.visualModel, {
+    ...state.liveSimulation.options,
+    initialPositions: structuredClone(state.initialLivePositions),
+    initialVelocities: structuredClone(state.initialLiveVelocities),
+  });
+  state.liveSimulation = liveSimulation;
+  state.physicalState = liveSimulation;
+  syncLiveSceneData(state);
+  applyThreeLodState(state);
+  renderState(state);
+  if (!state.physicsPaused) requestLiveFrame(state);
+  return livePhysicsSnapshot(state);
 }
 
 export function get3dPerformanceSnapshot(container) {
@@ -957,6 +1007,10 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     initialPositions: physicalPositions(physicalState),
     initialVelocities: physicalState?.velocities ?? null,
   });
+  const initialLivePositions = structuredClone(liveSimulation.positions);
+  const initialLiveVelocities = Object.fromEntries(
+    liveSimulation.physicalModel.nodeIds.map((id) => [id, { x: 0, y: 0, z: 0 }]),
+  );
   const data = buildThreeSceneData(visualModel, liveSimulation, options);
   const readabilityAudit = auditReadability3d(
     physicalPositions(liveSimulation),
@@ -1021,6 +1075,8 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     visualModel,
     physicalState: liveSimulation,
     liveSimulation,
+    initialLivePositions,
+    initialLiveVelocities,
     data,
     options: { ...options },
     nodeMeshes,
@@ -1049,6 +1105,7 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     readabilityAudit,
     performanceBudget,
     animationFrame: null,
+    physicsPaused: false,
     destroyed: false,
   };
   rendererStates.set(container, state);
@@ -1074,10 +1131,7 @@ export function destroy3dRenderer(container) {
   const state = rendererStates.get(container);
   if (!state) return false;
   state.destroyed = true;
-  if (state.animationFrame != null && typeof globalThis.cancelAnimationFrame === "function") {
-    globalThis.cancelAnimationFrame(state.animationFrame);
-    state.animationFrame = null;
-  }
+  cancelLiveFrame(state);
   state.resizeObserver?.disconnect();
   if (state.controls && state.controlsChangeListener) {
     state.controls.removeEventListener("change", state.controlsChangeListener);
