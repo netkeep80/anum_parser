@@ -1,22 +1,39 @@
 import { detectFormat, downloadText, parseArtifact, readUtf8File } from "./formats.js";
 import { availableDeserializers, deserializerById } from "./deserializers.js";
 import { availableSerializers, serializerById } from "./serializers.js";
+import { solvePhysicalLayout3d } from "./physics3d.js";
+import {
+  create3dRenderer,
+  destroy3dRenderer,
+  fit3dRenderer,
+  zoom3dRenderer,
+} from "./three-renderer.js";
+import { buildVisualModel } from "./visual-model.js";
 import {
   GRAPH_LAYOUTS,
   ROOTED_LAYOUT_ID,
   changeGraphLayout,
+  destroyGraph,
   fitGraph,
   renderAset,
   setGraphDebugState,
   zoomGraph,
 } from "./visualizer.js";
 
-const state = { cases: [], result: null, comparison: null, debugStep: 0 };
+const state = {
+  cases: [],
+  result: null,
+  comparison: null,
+  debugStep: 0,
+  graphView: "2d",
+  visualModel: null,
+  physicalState: null,
+};
 const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
   "run", "load", "file", "serializer", "save", "status", "summary", "symbols",
   "abits", "linkSequence", "rootChains", "storedAnums", "trace", "comparison",
-  "asetJson", "graph", "graphLayout", "graphFit", "graphZoomIn", "graphZoomOut", "appVersion",
+  "asetJson", "graph", "graphView", "graphLayout", "graphFit", "graphZoomIn", "graphZoomOut", "appVersion",
   "debugFirst", "debugPrev", "debugRange", "debugNext", "debugLast", "debugStep",
   "debugSource", "debugCurrent", "debugStack", "debugEffects",
 ];
@@ -38,6 +55,7 @@ async function boot() {
     option("aset", ".aset.json — открыть асеть"),
     option("aset-carrier", ".aset.json — прочитать carrier через ANUM v0.4"),
   );
+  ui.graphView.value = state.graphView;
   ui.graphLayout.replaceChildren(...GRAPH_LAYOUTS.map((layout) => option(layout.id, layout.title)));
   ui.graphLayout.value = ROOTED_LAYOUT_ID;
   ui.sample.replaceChildren(...state.cases.map((c, i) => option(String(i), `${c.id} — ${c.title}`)));
@@ -47,10 +65,13 @@ async function boot() {
   ui.load.addEventListener("click", () => ui.file.click());
   ui.file.addEventListener("change", loadFile);
   ui.save.addEventListener("click", saveOutput);
-  ui.graphLayout.addEventListener("change", () => changeGraphLayout(ui.graph, ui.graphLayout.value));
-  ui.graphFit.addEventListener("click", () => fitGraph(ui.graph));
-  ui.graphZoomIn.addEventListener("click", () => zoomGraph(ui.graph, 1.28));
-  ui.graphZoomOut.addEventListener("click", () => zoomGraph(ui.graph, 1 / 1.28));
+  ui.graphView.addEventListener("change", changeGraphView);
+  ui.graphLayout.addEventListener("change", () => {
+    if (state.graphView === "2d") changeGraphLayout(ui.graph, ui.graphLayout.value);
+  });
+  ui.graphFit.addEventListener("click", fitCurrentGraph);
+  ui.graphZoomIn.addEventListener("click", () => zoomCurrentGraph(1.28));
+  ui.graphZoomOut.addEventListener("click", () => zoomCurrentGraph(1 / 1.28));
   ui.debugFirst.addEventListener("click", () => setDebugStep(0));
   ui.debugPrev.addEventListener("click", () => setDebugStep(state.debugStep - 1));
   ui.debugNext.addEventListener("click", () => setDebugStep(state.debugStep + 1));
@@ -160,9 +181,57 @@ function render() {
   ui.asetJson.textContent = JSON.stringify(aset, null, 2);
   renderTrace(trace);
   renderComparison();
-  renderAset(ui.graph, aset, { layout: ui.graphLayout.value });
+  state.visualModel = buildVisualModel(aset);
+  state.physicalState = null;
+  renderGraph();
   renderDebugger();
   refreshSerializers();
+}
+
+function changeGraphView() {
+  state.graphView = ui.graphView.value === "3d" ? "3d" : "2d";
+  renderGraph();
+  renderDebugger();
+}
+
+function renderGraph() {
+  const aset = state.result?.aset;
+  if (!aset) return;
+  state.visualModel ??= buildVisualModel(aset);
+
+  if (state.graphView === "3d") {
+    destroyGraph(ui.graph);
+    state.physicalState = solvePhysicalLayout3d(state.visualModel);
+    create3dRenderer(ui.graph, state.visualModel, state.physicalState);
+  } else {
+    destroy3dRenderer(ui.graph);
+    state.physicalState = null;
+    renderAset(ui.graph, aset, {
+      layout: ui.graphLayout.value,
+      visualModel: state.visualModel,
+    });
+  }
+  updateGraphControls();
+}
+
+function updateGraphControls() {
+  const is3d = state.graphView === "3d";
+  ui.graphView.value = state.graphView;
+  ui.graphLayout.disabled = is3d;
+  ui.graphLayout.title = is3d
+    ? "Раскладки Cytoscape относятся только к структурному 2D-представлению"
+    : "Алгоритм авторазвёртки 2D";
+  ui.graph.dataset.viewMode = state.graphView;
+}
+
+function fitCurrentGraph() {
+  if (state.graphView === "3d") fit3dRenderer(ui.graph);
+  else fitGraph(ui.graph);
+}
+
+function zoomCurrentGraph(factor) {
+  if (state.graphView === "3d") zoom3dRenderer(ui.graph, factor);
+  else zoomGraph(ui.graph, factor);
 }
 
 function renderTrace(trace) {
@@ -207,7 +276,7 @@ function renderDebugger() {
     ui.debugCurrent.textContent = "Для импортированной асети пошагового состояния нет.";
     ui.debugStack.replaceChildren(textNode("Стек недоступен для этого входа."));
     ui.debugEffects.textContent = "—";
-    setGraphDebugState(ui.graph, null);
+    if (state.graphView === "2d") setGraphDebugState(ui.graph, null);
     updateTraceSelection();
     return;
   }
@@ -231,7 +300,7 @@ function renderDebugger() {
     `добавлено: ${(item.producedLinks ?? []).join(", ") || "—"}`,
     `переиспользовано: ${(item.reusedLinks ?? []).join(", ") || "—"}`,
   ].join("\n");
-  setGraphDebugState(ui.graph, item);
+  if (state.graphView === "2d") setGraphDebugState(ui.graph, item);
   updateTraceSelection();
 }
 
