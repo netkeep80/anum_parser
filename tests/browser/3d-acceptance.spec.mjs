@@ -119,6 +119,20 @@ async function rootScreenPoint(page) {
   });
 }
 
+async function rootCanvasPoint(page) {
+  await page.locator("#graph").scrollIntoViewIfNeeded();
+  return page.evaluate(() => {
+    const graph = document.getElementById("graph");
+    const canvas = graph.querySelector(":scope > canvas");
+    const label = graph.querySelector('[data-role="three-label-layer"] [data-link-id="R"]');
+    if (!canvas || !label) return null;
+    return {
+      x: Number.parseFloat(label.style.left),
+      y: Number.parseFloat(label.style.top),
+    };
+  });
+}
+
 async function semanticPixelCounts(page, pngBuffer) {
   const dataUrl = `data:image/png;base64,${pngBuffer.toString("base64")}`;
   return page.evaluate(async ({ dataUrl, colors }) => {
@@ -279,10 +293,11 @@ test("touch viewport initializes 3D and picks exact root link", async ({ page },
   test.skip(testInfo.project.name !== "chromium-touch");
   await loadAset(page, kernelAset());
   await enter3d(page);
-  await expect(page.locator("#graph > canvas")).toHaveCSS("touch-action", "none");
-  const point = await rootScreenPoint(page);
+  const canvas = page.locator("#graph > canvas");
+  await expect(canvas).toHaveCSS("touch-action", "none");
+  const point = await rootCanvasPoint(page);
   expect(point).not.toBeNull();
-  await page.touchscreen.tap(point.x, point.y);
+  await canvas.tap({ position: point });
   await expect.poll(() => selectedLink(page)).toBe("R");
   expect((await page.viewportSize()).width).toBe(390);
 });
