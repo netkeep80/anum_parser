@@ -114,6 +114,7 @@ pre { margin: 9px 0 0; padding: 11px; max-height: 330px; overflow: auto; color: 
   overflow: hidden;
   touch-action: none;
 }
+#graph > canvas { width: 100%; height: 100%; }
 .machine-workspace #graph { flex: 1 1 520px; height: auto; min-height: 520px; }
 #graph:focus-visible { outline: 2px solid var(--a); outline-offset: 2px; }
 .start-line, .end-line {
