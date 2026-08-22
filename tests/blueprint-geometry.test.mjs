@@ -4,7 +4,10 @@ import test from "node:test";
 
 import {
   BLUEPRINT_UPSTREAM,
+  blueprintCubicSegmentDerivativeAtEnd,
+  blueprintCubicSegmentDerivativeAtStart,
   blueprintGeometryIsFinite,
+  blueprintSegmentsAreC1,
   buildBlueprintGeometry,
   createBlueprintInitialPositions,
 } from "../src/blueprint-geometry.js";
@@ -29,12 +32,27 @@ function linkById(geometry, id) {
   return link;
 }
 
+function assertPointNear(actual, expected, epsilon = 1e-9) {
+  assert.ok(actual && expected);
+  const scaleX = Math.max(1, Math.abs(actual.x), Math.abs(expected.x));
+  const scaleY = Math.max(1, Math.abs(actual.y), Math.abs(expected.y));
+  assert.ok(Math.abs(actual.x - expected.x) <= epsilon * scaleX, `x: ${actual.x} != ${expected.x}`);
+  assert.ok(Math.abs(actual.y - expected.y) <= epsilon * scaleY, `y: ${actual.y} != ${expected.y}`);
+}
+
 test("blueprint geometry pins exact audited upstream provenance", () => {
   assert.deepEqual(BLUEPRINT_UPSTREAM, {
     repository: "konard/links-visuals",
     commit: "f377441533e4f10fa94aaa07138b684df88234b1",
     license: "Unlicense",
-    references: ["js/ik-pure.mjs", "js/blueprint-link.mjs", "grid.html"],
+    references: [
+      "animated-blueprint.html",
+      "js/path.mjs",
+      "js/ik-pure.mjs",
+      "js/blueprint-link.mjs",
+      "grid.html",
+      "docs/case-studies/issue-28/README.md",
+    ],
   });
 });
 
@@ -76,7 +94,7 @@ test("semantic start/end are pinned to referenced link centers", () => {
   assert.equal(link.endId, "B");
 });
 
-test("one blueprint spline crosses the semantic link center between its two halves", () => {
+test("one canonical blueprint path crosses the semantic link center without a path break", () => {
   const model = buildVisualModel(fixture());
   const geometry = buildBlueprintGeometry(model);
   const link = linkById(geometry, "X");
@@ -85,11 +103,59 @@ test("one blueprint spline crosses the semantic link center between its two halv
   assert.deepEqual(link.pathPoints[4], link.center);
   assert.deepEqual(link.segments[3].to, link.center);
   assert.deepEqual(link.segments[4].from, link.center);
+  assert.match(link.path, /^M /);
+  assert.equal((link.path.match(/\bM\b/g) ?? []).length, 1);
+  assert.equal((link.path.match(/\bC\b/g) ?? []).length, 8);
+
+  // Temporary compatibility only: #96 migrates the renderer off these split paths.
   assert.match(link.startPath, /^M /);
   assert.match(link.endPath, /^M /);
 });
 
-test("semantic self-link keeps exact anchors while producing visible finite curve", () => {
+test("Catmull-Rom cubic chain is C1 through every control point including semantic center", () => {
+  const model = buildVisualModel(fixture());
+  const geometry = buildBlueprintGeometry(model, {
+    R: { x: 0, y: 0 },
+    A: { x: -173, y: 39 },
+    B: { x: 241, y: -57 },
+    X: { x: 21, y: 147 },
+  });
+
+  for (const link of geometry.links) {
+    assert.equal(link.segments.length, 8);
+    assert.equal(blueprintSegmentsAreC1(link.segments), true, `${link.linkId} must be C1`);
+    for (let index = 0; index < link.segments.length - 1; index += 1) {
+      const left = link.segments[index];
+      const right = link.segments[index + 1];
+      assertPointNear(left.to, right.from);
+      assertPointNear(
+        blueprintCubicSegmentDerivativeAtEnd(left),
+        blueprintCubicSegmentDerivativeAtStart(right),
+      );
+    }
+
+    const beforeCenter = link.segments[3];
+    const afterCenter = link.segments[4];
+    assert.deepEqual(beforeCenter.to, link.center);
+    assert.deepEqual(afterCenter.from, link.center);
+    assertPointNear(
+      blueprintCubicSegmentDerivativeAtEnd(beforeCenter),
+      blueprintCubicSegmentDerivativeAtStart(afterCenter),
+    );
+  }
+});
+
+test("C1 checker rejects a broken tangent even when segment endpoints still meet", () => {
+  const model = buildVisualModel(fixture());
+  const link = linkById(buildBlueprintGeometry(model), "X");
+  const broken = structuredClone(link.segments);
+  broken[4].control1.x += 0.25;
+
+  assert.deepEqual(broken[3].to, broken[4].from);
+  assert.equal(blueprintSegmentsAreC1(broken), false);
+});
+
+test("semantic self-link keeps exact anchors while producing one visible finite C1 curve", () => {
   const model = buildVisualModel(fixture());
   const geometry = buildBlueprintGeometry(model);
   const root = linkById(geometry, "R");
@@ -99,12 +165,14 @@ test("semantic self-link keeps exact anchors while producing visible finite curv
   assert.deepEqual(root.startAnchor, root.center);
   assert.deepEqual(root.endAnchor, root.center);
   assert.equal(blueprintGeometryIsFinite(geometry), true);
+  assert.equal(blueprintSegmentsAreC1(root.segments), true);
   assert.ok(
     root.pathPoints.some((point) => Math.hypot(point.x - root.center.x, point.y - root.center.y) > 1),
     "self-link must remain visibly curved instead of collapsing to one point",
   );
-  assert.ok(root.startPath.length > 0);
-  assert.ok(root.endPath.length > 0);
+  assert.match(root.path, /^M /);
+  assert.equal((root.path.match(/\bM\b/g) ?? []).length, 1);
+  assert.equal((root.path.match(/\bC\b/g) ?? []).length, 8);
 });
 
 test("custom center movement automatically repins dependent link geometry", () => {
@@ -120,6 +188,7 @@ test("custom center movement automatically repins dependent link geometry", () =
   assert.notDeepEqual(after.startAnchor, before.startAnchor);
   assert.deepEqual(after.center, before.center);
   assert.deepEqual(after.endAnchor, before.endAnchor);
+  assert.equal(blueprintSegmentsAreC1(after.segments), true);
 });
 
 test("empty visual model has a valid empty blueprint projection", () => {

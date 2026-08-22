@@ -6,9 +6,12 @@ export const BLUEPRINT_UPSTREAM = Object.freeze({
   commit: "f377441533e4f10fa94aaa07138b684df88234b1",
   license: "Unlicense",
   references: Object.freeze([
+    "animated-blueprint.html",
+    "js/path.mjs",
     "js/ik-pure.mjs",
     "js/blueprint-link.mjs",
     "grid.html",
+    "docs/case-studies/issue-28/README.md",
   ]),
 });
 
@@ -85,6 +88,30 @@ export function blueprintGeometryIsFinite(geometry) {
   ].every(pointIsFinite));
 }
 
+export function blueprintCubicSegmentDerivativeAtStart(segment) {
+  if (!segment || !pointIsFinite(segment.from) || !pointIsFinite(segment.control1)) return null;
+  return scale(subtract(segment.control1, segment.from), 3);
+}
+
+export function blueprintCubicSegmentDerivativeAtEnd(segment) {
+  if (!segment || !pointIsFinite(segment.to) || !pointIsFinite(segment.control2)) return null;
+  return scale(subtract(segment.to, segment.control2), 3);
+}
+
+export function blueprintSegmentsAreC1(segments, epsilon = EPSILON) {
+  if (!Array.isArray(segments)) return false;
+  const tolerance = finiteNonNegative(epsilon, EPSILON);
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const left = segments[index];
+    const right = segments[index + 1];
+    if (!pointsNearlyEqual(left?.to, right?.from, tolerance)) return false;
+    const leftDerivative = blueprintCubicSegmentDerivativeAtEnd(left);
+    const rightDerivative = blueprintCubicSegmentDerivativeAtStart(right);
+    if (!pointsNearlyEqual(leftDerivative, rightDerivative, tolerance)) return false;
+  }
+  return true;
+}
+
 function buildLinkGeometry(node, positions, options) {
   const center = clonePoint(positions[node.linkId]);
   const startAnchor = clonePoint(positions[node.startId] ?? center);
@@ -113,6 +140,7 @@ function buildLinkGeometry(node, positions, options) {
     options.endOffsetFraction * options.spacing,
   );
   const segments = cubicSegments(pathPoints);
+  const path = segmentsToPath(segments);
 
   return {
     linkId: node.linkId,
@@ -126,6 +154,9 @@ function buildLinkGeometry(node, positions, options) {
     points,
     pathPoints,
     segments,
+    path,
+    // Temporary compatibility for the pre-#96 renderer. The canonical geometry
+    // is the single `path`; #96 removes the visual split at the semantic center.
     startPath: segmentsToPath(segments.slice(0, 4)),
     endPath: segmentsToPath(segments.slice(4)),
     selfStart: node.startId === node.linkId,
@@ -382,6 +413,14 @@ function clonePoint(point) {
 
 function pointIsFinite(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
+}
+
+function pointsNearlyEqual(left, right, epsilon) {
+  if (!pointIsFinite(left) || !pointIsFinite(right)) return false;
+  const scaleX = Math.max(1, Math.abs(left.x), Math.abs(right.x));
+  const scaleY = Math.max(1, Math.abs(left.y), Math.abs(right.y));
+  return Math.abs(left.x - right.x) <= epsilon * scaleX
+    && Math.abs(left.y - right.y) <= epsilon * scaleY;
 }
 
 function finitePositive(value, fallback) {
