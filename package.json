@@ -9,7 +9,7 @@
     "pretest": "npm run mts:prepare",
     "test": "node --test tests/*.test.mjs",
     "precheck": "npm run mts:prepare",
-    "check": "node --check src/model.js && node --check src/formats.js && node --check src/carrier.js && node --check src/deserializers.js && node --check src/serializers.js && node --check src/visualizer.js && node --check src/app.js"
+    "check": "node --check src/model.js && node --check src/formats.js && node --check src/carrier.js && node --check src/deserializers.js && node --check src/serializers.js && node --check src/visual-model.js && node --check src/cytoscape-adapter.js && node --check src/visualizer.js && node --check src/app.js"
   },
   "engines": {
     "node": ">=24"
