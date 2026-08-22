@@ -173,7 +173,7 @@ test("UI сохраняет 2D default и явно переключает 2D/3D 
   assert.match(html, /<option value="3d">3D — механическая асеть<\/option>/);
   assert.match(app, /graphView:\s*"2d"/);
   assert.match(app, /state\.visualModel = buildVisualModel\(aset\)/);
-  assert.match(app, /solvePhysicalLayout3d\(state\.visualModel\)/);
+  assert.match(app, /solveReadableLayout3d\(state\.visualModel\)/);
   assert.match(
     app,
     /create3dRenderer\(ui\.graph, state\.visualModel, state\.physicalState,\s*\{/,
