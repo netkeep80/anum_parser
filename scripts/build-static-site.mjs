@@ -14,6 +14,7 @@ function assert(condition, message) {
 
 for (const path of [
   join(vendor, 'three.module.js'),
+  join(vendor, 'three.core.js'),
   join(vendor, 'addons', 'controls', 'OrbitControls.js'),
   join(vendor, 'manifest.json'),
 ]) {
@@ -25,6 +26,7 @@ assert(manifest.package === 'three', 'Three.js vendor manifest package mismatch'
 assert(manifest.version === EXPECTED_THREE_VERSION,
   `Three.js vendor manifest version ${manifest.version} != ${EXPECTED_THREE_VERSION}`);
 assert(manifest.files?.['three.module.js']?.sha256, 'Three.js vendor manifest lacks entry-module digest');
+assert(manifest.files?.['three.core.js']?.sha256, 'Three.js vendor manifest lacks core-module digest');
 assert(manifest.files?.['addons/controls/OrbitControls.js']?.sha256,
   'Three.js vendor manifest lacks OrbitControls digest');
 
@@ -55,6 +57,7 @@ await cp(vendor, join(site, 'vendor', 'three'), { recursive: true });
 
 for (const path of [
   join(site, 'vendor', 'three', 'three.module.js'),
+  join(site, 'vendor', 'three', 'three.core.js'),
   join(site, 'vendor', 'three', 'addons', 'controls', 'OrbitControls.js'),
   join(site, 'vendor', 'three', 'manifest.json'),
 ]) {
