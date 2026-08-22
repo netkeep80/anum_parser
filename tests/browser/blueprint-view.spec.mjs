@@ -54,10 +54,19 @@ async function centerScreenPoint(page, linkId) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-async function pathData(page, linkId, role) {
+async function pathData(page, linkId) {
   return page
-    .locator(`[data-role="blueprint-link"][data-link-id="${linkId}"] [data-role="${role}"]`)
+    .locator(`[data-role="blueprint-link"][data-link-id="${linkId}"] [data-role="blueprint-link-path"]`)
     .getAttribute("d");
+}
+
+async function renderedLinkColors(page) {
+  return page.locator('[data-role="blueprint-link"]').evaluateAll((groups) => Object.fromEntries(
+    groups.map((group) => {
+      const path = group.querySelector('[data-role="blueprint-link-path"]');
+      return [group.getAttribute("data-link-id"), path?.getAttribute("stroke")];
+    }),
+  ));
 }
 
 function moved(before, after, linkId, epsilon = 0.01) {
@@ -70,7 +79,7 @@ test.beforeEach(async ({ page }) => {
   await boot(page);
 });
 
-test("blueprint is a third native SVG view with semantic RGB and one spline per link", async ({ page }, testInfo) => {
+test("blueprint is a third native SVG view with one continuous colored path per link", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
 
   await expect(page.locator('#graphView option[value="2d"]')).toHaveCount(1);
@@ -82,32 +91,47 @@ test("blueprint is a third native SVG view with semantic RGB and one spline per 
 
   await expect(page.locator('[data-role="blueprint-center"]')).toHaveCount(5);
   await expect(page.locator('[data-role="blueprint-link"]')).toHaveCount(5);
-  await expect(page.locator(".blueprint-curve")).toHaveCount(10);
+  await expect(page.locator('[data-role="blueprint-link-path"]')).toHaveCount(5);
+  await expect(page.locator(".blueprint-curve")).toHaveCount(5);
+  await expect(page.locator('[data-role="blueprint-start-marker"]')).toHaveCount(5);
+  await expect(page.locator('[data-role="blueprint-end-marker"]')).toHaveCount(5);
   await expect(page.locator('[data-role="blueprint-label"]')).toHaveCount(5);
   await expect(page.locator('#graph > [data-role="blueprint-svg"]')).toHaveCount(1);
   await expect(page.locator("#graph > canvas")).toHaveCount(0);
+  await expect(page.locator("#graph defs stop")).toHaveCount(0);
 
   const rendered = await snapshot(page);
   expect(rendered.linkCount).toBe(5);
   expect(rendered.centerCount).toBe(5);
-  expect(rendered.pathCount).toBe(10);
+  expect(rendered.pathCount).toBe(5);
   expect(rendered.svgCount).toBe(1);
 
-  const colors = await page.locator("#graph defs stop").evaluateAll((stops) =>
-    stops.map((stop) => stop.getAttribute("stop-color")),
-  );
-  expect(colors).toContain("#ff657a");
-  expect(colors).toContain("#67e8b3");
-  expect(colors).toContain("#73a7ff");
-  await expect(page.locator('#blueprint-end-arrow path')).toHaveAttribute("fill", "#73a7ff");
+  const colors = await renderedLinkColors(page);
+  expect(Object.keys(colors)).toEqual(["R", "O", "C", "L", "U"]);
+  expect(new Set(Object.values(colors)).size).toBe(5);
+  expect(colors).toEqual(rendered.linkColors);
+
+  const markerEvidence = await page.locator("#graph marker").evaluateAll((markers) => markers.map((marker) => ({
+    role: marker.getAttribute("data-role"),
+    color: marker.getAttribute("data-link-color"),
+    strokes: [...marker.querySelectorAll("line")].map((line) => line.getAttribute("stroke")),
+    filledPaths: marker.querySelectorAll("path").length,
+  })));
+  expect(markerEvidence).toHaveLength(10);
+  for (const marker of markerEvidence) {
+    expect(marker.color).toBeTruthy();
+    expect(marker.strokes.length).toBe(marker.role === "blueprint-start-marker" ? 1 : 2);
+    expect(marker.strokes.every((stroke) => stroke === marker.color)).toBe(true);
+    expect(marker.filledPaths).toBe(0);
+  }
 
   const root = page.locator('[data-role="blueprint-center"][data-link-id="R"]');
   await expect(root.locator(".blueprint-center-dot")).toHaveClass(/root/);
-  const rootStart = await pathData(page, "R", "blueprint-start-path");
-  const rootEnd = await pathData(page, "R", "blueprint-end-path");
-  expect(rootStart).toMatch(/^M /);
-  expect(rootEnd).toMatch(/^M /);
-  expect(rootStart.length + rootEnd.length).toBeGreaterThan(80);
+  const rootPath = await pathData(page, "R");
+  expect(rootPath).toMatch(/^M /);
+  expect((rootPath.match(/\bM\b/g) ?? []).length).toBe(1);
+  expect((rootPath.match(/\bC\b/g) ?? []).length).toBe(8);
+  expect(rootPath.length).toBeGreaterThan(80);
 
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
   await expect(page.locator("#graphPhysicsControls")).toBeHidden();
@@ -115,14 +139,15 @@ test("blueprint is a third native SVG view with semantic RGB and one spline per 
   await expect(page.locator("#graphLayout")).toBeDisabled();
 });
 
-test("dragging a blueprint center repins dependent links and survives view switching", async ({ page }, testInfo) => {
+test("dragging a blueprint center repins dependent links without changing their colors", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await enterBlueprint(page);
 
   const semanticBefore = await page.locator("#asetJson").textContent();
   const before = await snapshot(page);
-  const lStartBefore = await pathData(page, "L", "blueprint-start-path");
-  const uEndBefore = await pathData(page, "U", "blueprint-end-path");
+  const colorsBefore = await renderedLinkColors(page);
+  const lPathBefore = await pathData(page, "L");
+  const uPathBefore = await pathData(page, "U");
   const point = await centerScreenPoint(page, "O");
   expect(point).not.toBeNull();
 
@@ -134,8 +159,10 @@ test("dragging a blueprint center repins dependent links and survives view switc
   await expect.poll(async () => moved(before, await snapshot(page), "O", 1)).toBe(true);
   const afterDrag = await snapshot(page);
   expect(afterDrag.selectedLinkId).toBe("O");
-  expect(await pathData(page, "L", "blueprint-start-path")).not.toBe(lStartBefore);
-  expect(await pathData(page, "U", "blueprint-end-path")).not.toBe(uEndBefore);
+  expect(await pathData(page, "L")).not.toBe(lPathBefore);
+  expect(await pathData(page, "U")).not.toBe(uPathBefore);
+  expect(await renderedLinkColors(page)).toEqual(colorsBefore);
+  expect(afterDrag.linkColors).toEqual(before.linkColors);
 
   const scaleBeforeZoom = afterDrag.scale;
   await page.locator("#graphZoomIn").click();
@@ -144,6 +171,7 @@ test("dragging a blueprint center repins dependent links and survives view switc
   const afterFit = await snapshot(page);
   expect(Number.isFinite(afterFit.scale)).toBe(true);
   expect(afterFit.scale).toBeGreaterThan(0);
+  expect(afterFit.linkColors).toEqual(before.linkColors);
 
   const draggedPosition = afterFit.positions.O;
   await page.selectOption("#graphView", "2d");
@@ -155,7 +183,9 @@ test("dragging a blueprint center repins dependent links and survives view switc
   const restored = await snapshot(page);
   expect(restored.positions.O).toEqual(draggedPosition);
   expect(restored.selectedLinkId).toBe("O");
+  expect(restored.linkColors).toEqual(before.linkColors);
+  expect(await renderedLinkColors(page)).toEqual(colorsBefore);
   await expect(page.locator('#graph > [data-role="blueprint-svg"]')).toHaveCount(1);
-  await expect(page.locator(".blueprint-curve")).toHaveCount(10);
+  await expect(page.locator(".blueprint-curve")).toHaveCount(5);
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
 });
