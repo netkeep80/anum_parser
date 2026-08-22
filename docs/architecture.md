@@ -450,3 +450,92 @@ previous/current differential proof
 runtime/browser evidence
 canonical docs
 ```
+
+## 17. Живая 3D-механическая проекция
+
+Живой 3D-режим находится целиком **после** семантической границы. Его конвейер:
+
+```text
+accepted Aset
+  -> visualModel
+  -> deterministic readable 3D layout
+  -> livePhysicalSimulation3d
+  -> Three.js renderer
+```
+
+Ни `livePhysicalSimulation3d`, ни Three.js renderer не имеют права менять `links`, тождество связей, denotation, trace или `semanticAuthority`. Во время интерактивной работы меняются только механические и presentation-состояния:
+
+```text
+positions / velocities
+physics options
+pinned nodes during drag
+camera
+selection / hover
+fullscreen presentation
+```
+
+### Механические инварианты
+
+- root всегда зафиксирован в `(0,0,0)`;
+- self-loop остаётся видимым, но исключён из набора силовых пружин;
+- начало связи имеет градиент `RED -> GREEN`;
+- конец связи имеет градиент `GREEN -> BLUE`;
+- две касательные, выходящие из GREEN-центра одной связи, строго противоположны на 180° в истинном 3D;
+- semantic RGB не используется для кодирования debugger state.
+
+### Wake / sleep
+
+Пользовательский drag и изменение параметров физики будят существующую simulation. `pause` прекращает physics integration, но не уничтожает renderer и не запрещает навигацию камерой. После `settleWindow` устойчивых шагов simulation переходит в sleep и больше не планирует лишние physics ticks.
+
+Изменение камеры через OrbitControls вызывает только пересчёт presentation LOD и render. Оно не будит уснувшую физику и не меняет координаты механической асети.
+
+`reset` создаёт новое механическое состояние из сохранённой исходной детерминированной 3D-раскладки и нулевых скоростей, сохраняя presentation selection и сам renderer.
+
+### Renderer lifecycle и ресурсы
+
+Один live tick не пересоздаёт renderer или scene. Динамические пружины и LOD могут заменять `BufferGeometry`, но старая геометрия перед заменой обязательно освобождается через `dispose()`.
+
+`destroy3dRenderer` является полной lifecycle-границей. Он обязан:
+
+- отменить активный `requestAnimationFrame`;
+- отключить `ResizeObserver`;
+- снять listener OrbitControls и вызвать `dispose()` controls;
+- снять pointer/touch listeners и освободить pointer capture;
+- освободить geometry/material scene objects;
+- освободить WebGL renderer;
+- удалить canvas и label layer;
+- удалить renderer state из локального `WeakMap`.
+
+Поэтому повторные циклы `2D -> 3D -> 2D` не должны накапливать canvas, label layers, observers, listeners или RAF.
+
+### Fullscreen
+
+Fullscreen является только изменением presentation workspace. Используется native Fullscreen API, а при его недоступности — CSS viewport fallback. В обоих вариантах остаются теми же:
+
+```text
+renderer
+scene
+camera
+selected link
+live simulation
+physics parameters
+pause state
+```
+
+Переход вызывает только `resize3dRenderer` и не требует повторной десериализации или пересоздания semantic/physical state. Выход доступен кнопкой и `Esc`.
+
+### Browser-level контракт
+
+Browser acceptance проверяет интеграционно, что:
+
+- drag свободной связи передаёт возмущение другим свободным узлам, а root остаётся в origin;
+- charge, spring stiffness и damping применяются live;
+- pause/resume/reset не меняют semantic Aset;
+- reset воспроизводим;
+- settled simulation засыпает, а camera-only navigation не будит её;
+- fullscreen resize/exit сохраняет текущую асеть, renderer, selection и physics state;
+- повторные fullscreen и `2D <-> 3D` циклы не накапливают renderer resources;
+- debugger и обычный selection продолжают работать поверх 3D;
+- отказ WebGL чисто возвращает structural 2D.
+
+Это фиксирует конечную архитектурную границу: live 3D — исследовательская механическая проекция уже существующей асети, а не альтернативное вычисление МТС.
