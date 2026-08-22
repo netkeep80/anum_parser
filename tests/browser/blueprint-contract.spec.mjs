@@ -1,11 +1,6 @@
 import { chromium, expect, test } from "@playwright/test";
 
 const BASE_URL = "http://127.0.0.1:4173";
-const COLORS = Object.freeze({
-  start: "#ff657a",
-  center: "#67e8b3",
-  end: "#73a7ff",
-});
 
 function kernelAset() {
   return {
@@ -78,17 +73,20 @@ async function centerScreenPoint(page, linkId) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-async function gradientColors(page) {
-  return page.locator("#graph defs stop").evaluateAll((stops) =>
-    stops.map((stop) => stop.getAttribute("stop-color")),
-  );
+async function linkColors(page) {
+  return page.locator('[data-role="blueprint-link"]').evaluateAll((groups) => Object.fromEntries(
+    groups.map((group) => {
+      const path = group.querySelector('[data-role="blueprint-link-path"]');
+      return [group.getAttribute("data-link-id"), path?.getAttribute("stroke")];
+    }),
+  ));
 }
 
 test.beforeEach(async ({ page }) => {
   await boot(page);
 });
 
-test("debugger and selection stay presentation-only in blueprint mode", async ({ page }, testInfo) => {
+test("debugger and selection stay presentation-only without recoloring blueprint links", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
 
   await page.selectOption("#sample", "12");
@@ -101,10 +99,10 @@ test("debugger and selection stay presentation-only in blueprint mode", async ({
   await root.click();
   await expect.poll(async () => (await blueprintSnapshot(page))?.selectedLinkId).toBe("R");
 
-  const colorsBefore = await gradientColors(page);
-  expect(colorsBefore).toContain(COLORS.start);
-  expect(colorsBefore).toContain(COLORS.center);
-  expect(colorsBefore).toContain(COLORS.end);
+  const colorsBefore = await linkColors(page);
+  expect(Object.keys(colorsBefore).length).toBeGreaterThan(0);
+  expect(new Set(Object.values(colorsBefore)).size).toBe(Object.keys(colorsBefore).length);
+  await expect(page.locator("#graph defs stop")).toHaveCount(0);
 
   const last = await page.locator("#debugStep").textContent();
   await page.locator("#debugFirst").click();
@@ -116,7 +114,8 @@ test("debugger and selection stay presentation-only in blueprint mode", async ({
   await page.locator("#debugNext").click();
   await expect(page.locator("#debugEffects")).toContainText("видимых связей:");
   expect((await blueprintSnapshot(page))?.svgCount).toBe(1);
-  expect(await gradientColors(page)).toEqual(colorsBefore);
+  expect(await linkColors(page)).toEqual(colorsBefore);
+  expect((await blueprintSnapshot(page))?.linkColors).toEqual(colorsBefore);
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
 });
 
@@ -129,6 +128,7 @@ test("repeated 2D/blueprint/3D cycles keep exactly one active renderer", async (
     await enterBlueprint(page);
     expect(await rendererActivity(page)).toEqual({ blueprint: true, three: false });
     await expect(page.locator('#graph > [data-role="blueprint-svg"]')).toHaveCount(1);
+    await expect(page.locator('[data-role="blueprint-link-path"]')).toHaveCount(5);
     await expect(page.locator("#graph > canvas")).toHaveCount(0);
 
     await page.selectOption("#graphView", "3d");
@@ -155,6 +155,7 @@ test("dragged blueprint geometry remains finite after viewport resize and fit", 
   await enterBlueprint(page);
   const semanticBefore = await page.locator("#asetJson").textContent();
   const before = await blueprintSnapshot(page);
+  const colorsBefore = await linkColors(page);
   const point = await centerScreenPoint(page, "O");
   expect(point).not.toBeNull();
 
@@ -179,7 +180,9 @@ test("dragged blueprint geometry remains finite after viewport resize and fit", 
   expect(Number.isFinite(afterResize.pan.x)).toBe(true);
   expect(Number.isFinite(afterResize.pan.y)).toBe(true);
   expect(afterResize.svgCount).toBe(1);
-  expect(afterResize.pathCount).toBe(10);
+  expect(afterResize.pathCount).toBe(5);
+  expect(afterResize.linkColors).toEqual(before.linkColors);
+  expect(await linkColors(page)).toEqual(colorsBefore);
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
 });
 
@@ -191,7 +194,8 @@ test("WebGL fallback returns to structural 2D without disabling blueprint", asyn
   });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   try {
-    await boot(page);
+    await page.goto(BASE_URL);
+    await expect(page.locator("#status")).toContainText("Готово");
     await loadKernel(page);
     const semanticBefore = await page.locator("#asetJson").textContent();
 
@@ -207,6 +211,7 @@ test("WebGL fallback returns to structural 2D without disabling blueprint", asyn
     await page.locator("#graphFit").click();
     expect(await rendererActivity(page)).toEqual({ blueprint: true, three: false });
     expect((await blueprintSnapshot(page))?.svgCount).toBe(1);
+    expect((await blueprintSnapshot(page))?.pathCount).toBe(5);
     expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
   } finally {
     await browser.close();

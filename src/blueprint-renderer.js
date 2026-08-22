@@ -1,11 +1,35 @@
 import { buildBlueprintGeometry, createBlueprintInitialPositions } from "./blueprint-geometry.js";
-import { SEMANTIC_COLORS } from "./visual-model.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 20;
 const DEFAULT_PADDING = 36;
+const START_MARKER_X = 62.5 - (12.5 - 12.5 / 1.618);
 const instances = new WeakMap();
+
+// Presentation-only palette. A link color is stable for a deterministic visual-model
+// order, but it is never MTS identity or semantic authority.
+export const BLUEPRINT_LINK_PALETTE = Object.freeze([
+  "#59aaf7",
+  "#ff9d4d",
+  "#ef6f6c",
+  "#65c4b0",
+  "#9bc75b",
+  "#f2cf5b",
+  "#b889d6",
+  "#f28eae",
+  "#c49a6c",
+  "#b9b9b9",
+  "#5bc0eb",
+  "#d982c3",
+]);
+
+export function blueprintLinkColor(index) {
+  const safeIndex = Number.isInteger(index) && index >= 0 ? index : 0;
+  if (safeIndex < BLUEPRINT_LINK_PALETTE.length) return BLUEPRINT_LINK_PALETTE[safeIndex];
+  const hue = (210 + safeIndex * 137.50776405003785) % 360;
+  return `hsl(${Number(hue.toFixed(3))} 72% 62%)`;
+}
 
 export function createBlueprintRenderer(container, visualModel, options = {}) {
   if (!container) throw new Error("Blueprint renderer requires a container");
@@ -15,6 +39,7 @@ export function createBlueprintRenderer(container, visualModel, options = {}) {
     container,
     visualModel,
     positions: clonePositions(options.positions ?? createBlueprintInitialPositions(visualModel)),
+    linkColors: createLinkColors(visualModel),
     selectedLinkId: options.selectedLinkId ?? null,
     debugState: options.debugState ?? null,
     onSelectLink: typeof options.onSelectLink === "function" ? options.onSelectLink : null,
@@ -151,41 +176,44 @@ export function setBlueprintPosition(container, linkId, position) {
   return true;
 }
 
+function createLinkColors(visualModel) {
+  return new Map((visualModel?.nodes ?? []).map((node, index) => [node.linkId, blueprintLinkColor(index)]));
+}
+
 function redraw(state) {
   if (state.destroyed) return;
   state.geometry = buildBlueprintGeometry(state.visualModel, state.positions);
-  state.defs.replaceChildren(createArrowMarker());
+  state.defs.replaceChildren();
   state.curvesLayer.replaceChildren();
   state.centersLayer.replaceChildren();
   state.labelsLayer.replaceChildren();
 
   for (const link of state.geometry.links) {
+    const color = state.linkColors.get(link.linkId) ?? blueprintLinkColor(0);
+    const markerBase = safeId(`blueprint-${link.linkId}`);
+    const startMarkerId = `${markerBase}-start`;
+    const endMarkerId = `${markerBase}-end`;
+    state.defs.append(
+      createStartMarker(startMarkerId, color),
+      createEndMarker(endMarkerId, color),
+    );
+
     const group = svgElement("g", {
       "data-role": "blueprint-link",
       "data-link-id": link.linkId,
+      "data-link-color": color,
     });
-    const startGradientId = safeId(`blueprint-start-${link.linkId}`);
-    const endGradientId = safeId(`blueprint-end-${link.linkId}`);
-    state.defs.append(
-      linearGradient(startGradientId, SEMANTIC_COLORS.start, SEMANTIC_COLORS.center),
-      linearGradient(endGradientId, SEMANTIC_COLORS.center, SEMANTIC_COLORS.end),
-    );
-    const startPath = svgElement("path", {
-      d: link.startPath,
-      class: "blueprint-curve blueprint-start-curve",
-      stroke: `url(#${startGradientId})`,
+    const path = svgElement("path", {
+      d: link.path,
+      class: "blueprint-curve",
+      stroke: color,
       fill: "none",
-      "data-role": "blueprint-start-path",
+      "marker-start": `url(#${startMarkerId})`,
+      "marker-end": `url(#${endMarkerId})`,
+      "data-role": "blueprint-link-path",
+      "data-link-color": color,
     });
-    const endPath = svgElement("path", {
-      d: link.endPath,
-      class: "blueprint-curve blueprint-end-curve",
-      stroke: `url(#${endGradientId})`,
-      fill: "none",
-      "marker-end": "url(#blueprint-end-arrow)",
-      "data-role": "blueprint-end-path",
-    });
-    group.append(startPath, endPath);
+    group.append(path);
     state.curvesLayer.append(group);
 
     const centerGroup = svgElement("g", {
@@ -193,13 +221,13 @@ function redraw(state) {
       transform: `translate(${link.center.x} ${link.center.y})`,
       "data-role": "blueprint-center",
       "data-link-id": link.linkId,
+      "data-link-color": color,
       tabindex: "0",
     });
     const halo = svgElement("circle", { r: 13, class: "blueprint-center-halo" });
     const center = svgElement("circle", {
       r: link.root ? 8 : 6.5,
       class: `blueprint-center-dot${link.root ? " root" : ""}`,
-      fill: SEMANTIC_COLORS.center,
     });
     centerGroup.append(halo, center);
     state.centersLayer.append(centerGroup);
@@ -323,33 +351,73 @@ function applyViewportTransform(state) {
   state.viewport.setAttribute("transform", `translate(${state.panX} ${state.panY}) scale(${state.scale})`);
 }
 
-function createArrowMarker() {
+function createStartMarker(id, color) {
   const marker = svgElement("marker", {
-    id: "blueprint-end-arrow",
-    viewBox: "0 0 10 10",
-    refX: "8.5",
-    refY: "5",
-    markerWidth: "8",
-    markerHeight: "8",
-    orient: "auto-start-reverse",
+    id,
+    class: "blueprint-endpoint-marker blueprint-start-marker",
+    viewBox: "0 0 100 100",
+    markerWidth: "10",
+    markerHeight: "10",
+    refX: "50",
+    refY: "50",
+    orient: "auto",
     markerUnits: "strokeWidth",
+    "data-role": "blueprint-start-marker",
+    "data-link-color": color,
   });
-  marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: SEMANTIC_COLORS.end }));
+  marker.append(svgElement("line", {
+    x1: START_MARKER_X,
+    y1: 25 + 14.5 - 0.23,
+    x2: START_MARKER_X,
+    y2: 75 - 14.5 + 0.23,
+    stroke: color,
+    "stroke-width": "6",
+    "stroke-linecap": "round",
+  }));
   return marker;
 }
 
-function linearGradient(id, from, to) {
-  const gradient = svgElement("linearGradient", { id, x1: "0%", y1: "0%", x2: "100%", y2: "0%" });
-  gradient.append(
-    svgElement("stop", { offset: "0%", "stop-color": from }),
-    svgElement("stop", { offset: "100%", "stop-color": to }),
+function createEndMarker(id, color) {
+  const marker = svgElement("marker", {
+    id,
+    class: "blueprint-endpoint-marker blueprint-end-marker",
+    viewBox: "-2 0 102 100",
+    markerWidth: "10",
+    markerHeight: "10",
+    refX: "10",
+    refY: "50",
+    orient: "auto",
+    markerUnits: "strokeWidth",
+    "data-role": "blueprint-end-marker",
+    "data-link-color": color,
+  });
+  marker.append(
+    svgElement("line", {
+      x1: 10 + 0.35,
+      y1: 50 + 0.35,
+      x2: -0.35,
+      y2: 40 - 0.35,
+      stroke: color,
+      "stroke-width": "6",
+      "stroke-linecap": "round",
+    }),
+    svgElement("line", {
+      x1: 10 + 0.35,
+      y1: 50 - 0.35,
+      x2: -0.35,
+      y2: 60 + 0.35,
+      stroke: color,
+      "stroke-width": "6",
+      "stroke-linecap": "round",
+    }),
   );
-  return gradient;
+  return marker;
 }
 
 function snapshot(state) {
   return {
     positions: clonePositions(state.positions),
+    linkColors: Object.fromEntries(state.linkColors),
     selectedLinkId: state.selectedLinkId,
     scale: state.scale,
     pan: { x: state.panX, y: state.panY },

@@ -155,10 +155,6 @@ function buildLinkGeometry(node, positions, options) {
     pathPoints,
     segments,
     path,
-    // Temporary compatibility for the pre-#96 renderer. The canonical geometry
-    // is the single `path`; #96 removes the visual split at the semantic center.
-    startPath: segmentsToPath(segments.slice(0, 4)),
-    endPath: segmentsToPath(segments.slice(4)),
     selfStart: node.startId === node.linkId,
     selfEnd: node.endId === node.linkId,
   };
