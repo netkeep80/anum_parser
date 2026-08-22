@@ -189,6 +189,7 @@ test("UI сохраняет 2D default и явно переключает 2D/blu
   assert.match(app, /renderAset\(ui\.graph, aset,/);
   assert.match(app, /const is2d = state\.graphView === "2d"/);
   assert.match(app, /ui\.graphLayout\.disabled = !is2d/);
+  assert.match(app, /ui\.graphPhysicsControls\.hidden = !is3d/);
 });
 
 test("browser Three import map остаётся exact-local и не использует remote Three CDN", async () => {
