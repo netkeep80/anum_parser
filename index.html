@@ -55,7 +55,7 @@
         </div>
       </section>
 
-      <section class="panel graph-panel">
+      <section id="graphPanel" class="panel graph-panel">
         <div class="section-title graph-heading">
           <div><p class="eyebrow">Асеть связей</p><h2>Граф представления</h2></div>
           <div class="graph-toolbar" aria-label="Управление графом">
@@ -67,6 +67,7 @@
             <label for="graphLayout">Раскладка 2D</label>
             <select id="graphLayout" title="Алгоритм авторазвёртки 2D"></select>
             <button id="graphFit" type="button" title="Вписать весь граф в область">Вписать</button>
+            <button id="graphFullscreen" type="button" aria-pressed="false" title="Развернуть 3D на весь экран браузера" hidden>На весь экран</button>
             <button id="graphZoomOut" type="button" class="graph-zoom" title="Отдалить">−</button>
             <button id="graphZoomIn" type="button" class="graph-zoom" title="Приблизить">+</button>
           </div>
