@@ -12,10 +12,15 @@
     "test": "node --test tests/*.test.mjs",
     "precheck": "npm run deps:prepare",
     "check": "node --check src/model.js && node --check src/formats.js && node --check src/carrier.js && node --check src/deserializers.js && node --check src/serializers.js && node --check src/visual-model.js && node --check src/geometry3d.js && node --check src/physics3d.js && node --check src/readability3d.js && node --check src/readable-layout3d.js && node --check src/three-renderer.js && node --check src/cytoscape-adapter.js && node --check src/visualizer.js && node --check src/app.js && node --check scripts/materialize-three.mjs && node --check scripts/build-static-site.mjs",
-    "site:build": "node scripts/build-static-site.mjs"
+    "site:build": "node scripts/build-static-site.mjs",
+    "browser:install": "playwright install --with-deps chromium",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
   },
   "engines": {
     "node": ">=24"
