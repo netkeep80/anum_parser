@@ -105,18 +105,26 @@ async function rendererActive(page) {
 }
 
 async function rootScreenPoint(page) {
-  await page.locator("#graph").scrollIntoViewIfNeeded();
-  return page.evaluate(() => {
-    const graph = document.getElementById("graph");
-    const canvas = graph.querySelector(":scope > canvas");
-    const label = graph.querySelector('[data-role="three-label-layer"] [data-link-id="R"]');
-    if (!canvas || !label) return null;
-    const rect = canvas.getBoundingClientRect();
+  const graph = page.locator("#graph");
+  const canvas = page.locator("#graph > canvas");
+  await graph.scrollIntoViewIfNeeded();
+  const relative = await page.evaluate(() => {
+    const graphElement = document.getElementById("graph");
+    const label = graphElement.querySelector('[data-role="three-label-layer"] [data-link-id="R"]');
+    if (!label) return null;
+    const width = Math.max(1, graphElement.clientWidth);
+    const height = Math.max(1, graphElement.clientHeight);
     return {
-      x: rect.left + Number.parseFloat(label.style.left),
-      y: rect.top + Number.parseFloat(label.style.top),
+      x: Number.parseFloat(label.style.left) / width,
+      y: Number.parseFloat(label.style.top) / height,
     };
   });
+  const box = await canvas.boundingBox();
+  if (!relative || !box) return null;
+  return {
+    x: box.x + relative.x * box.width,
+    y: box.y + relative.y * box.height,
+  };
 }
 
 async function rootCanvasPoint(page) {
