@@ -106,10 +106,8 @@ test("one canonical blueprint path crosses the semantic link center without a pa
   assert.match(link.path, /^M /);
   assert.equal((link.path.match(/\bM\b/g) ?? []).length, 1);
   assert.equal((link.path.match(/\bC\b/g) ?? []).length, 8);
-
-  // Temporary compatibility only: #96 migrates the renderer off these split paths.
-  assert.match(link.startPath, /^M /);
-  assert.match(link.endPath, /^M /);
+  assert.equal("startPath" in link, false);
+  assert.equal("endPath" in link, false);
 });
 
 test("Catmull-Rom cubic chain is C1 through every control point including semantic center", () => {
