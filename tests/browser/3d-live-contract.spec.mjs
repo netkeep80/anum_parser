@@ -214,7 +214,10 @@ test("repeated fullscreen and 2D/3D lifecycle cycles do not accumulate renderer 
   test.skip(testInfo.project.name !== "chromium-desktop");
   await enter3d(page);
   await page.locator("#graphPhysicsPause").click();
-  await setSelectedLink(page, "L");
+  const selectionPoint = await linkScreenPoint(page, "L");
+  expect(selectionPoint).not.toBeNull();
+  await page.mouse.click(selectionPoint.x, selectionPoint.y);
+  await expect.poll(() => selectedLink(page)).toBe("L");
   await forceCssFullscreenFallback(page);
 
   for (let cycle = 0; cycle < 3; cycle += 1) {
