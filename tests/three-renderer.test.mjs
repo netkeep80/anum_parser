@@ -174,7 +174,12 @@ test("UI сохраняет 2D default и явно переключает 2D/3D 
   assert.match(app, /graphView:\s*"2d"/);
   assert.match(app, /state\.visualModel = buildVisualModel\(aset\)/);
   assert.match(app, /solvePhysicalLayout3d\(state\.visualModel\)/);
-  assert.match(app, /create3dRenderer\(ui\.graph, state\.visualModel, state\.physicalState\)/);
+  assert.match(
+    app,
+    /create3dRenderer\(ui\.graph, state\.visualModel, state\.physicalState,\s*\{/,
+  );
+  assert.match(app, /debugState:\s*currentDebugState\(\)/);
+  assert.match(app, /selectedLinkId:\s*state\.selectedLinkId/);
   assert.match(app, /destroy3dRenderer\(ui\.graph\)/);
   assert.match(app, /renderAset\(ui\.graph, aset,/);
   assert.match(app, /ui\.graphLayout\.disabled = is3d/);
