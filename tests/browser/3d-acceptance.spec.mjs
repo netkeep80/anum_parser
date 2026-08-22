@@ -295,9 +295,9 @@ test("touch viewport initializes 3D and picks exact root link", async ({ page },
   await enter3d(page);
   const canvas = page.locator("#graph > canvas");
   await expect(canvas).toHaveCSS("touch-action", "none");
-  const point = await rootCanvasPoint(page);
+  const point = await rootScreenPoint(page);
   expect(point).not.toBeNull();
-  await canvas.tap({ position: point });
+  await page.touchscreen.tap(point.x, point.y);
   await expect.poll(() => selectedLink(page)).toBe("R");
   const viewport = page.viewportSize();
   expect(viewport?.width).toBeLessThan(500);
