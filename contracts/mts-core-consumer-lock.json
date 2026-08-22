@@ -2,18 +2,18 @@
   "schema": "anum-parser-mts-core-consumer-lock/v0.1",
   "channel": "accepted-current",
   "repository": "netkeep80/anum_docs",
-  "commit": "957c818d82bd3211f2a59547fff28e8ed0ec4331",
+  "commit": "6b7f616c7b275310aebdbe998da13c5811c91391",
   "accepted": {
     "contract": {
-      "path": "contracts/mts-contract-v0.10.json",
-      "schema": "mts-contract/v0.10",
+      "path": "contracts/mts-contract-v0.11.json",
+      "schema": "mts-contract/v0.11",
       "status": "accepted",
       "accepted": true
     },
     "conformance": {
-      "path": "contracts/mts-conformance-v0.10.json",
-      "schema": "mts-conformance/v0.10",
-      "contract": "mts-contract/v0.10",
+      "path": "contracts/mts-conformance-v0.11.json",
+      "schema": "mts-conformance/v0.11",
+      "contract": "mts-contract/v0.11",
       "status": "accepted",
       "accepted": true,
       "coverageState": "complete"
@@ -24,7 +24,7 @@
     "version": "0.10.0",
     "root": "ts",
     "artifact": "mts-core-0.10.0.tgz",
-    "sha256": "0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007",
+    "sha256": "6b4dbd701f46a6a339e20b892b8a5d9478bb40a9392415899291eb0fe30ddf9c",
     "producer": {
       "node": "24.19.0",
       "npm": "11.17.0"
