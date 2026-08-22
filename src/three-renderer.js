@@ -11,6 +11,13 @@ import {
   subtractVec3,
 } from "./geometry3d.js";
 import {
+  createLivePhysicalSimulation3d,
+  movePinnedLivePhysicalNode3d,
+  pinLivePhysicalNode3d,
+  releaseLivePhysicalNode3d,
+  stepLivePhysicalSimulation3d,
+} from "./live-physics3d.js";
+import {
   auditReadability3d,
   buildLodPlan3d,
   buildPerformanceBudget3d,
@@ -325,9 +332,22 @@ function replaceNodeGeometry(mesh, node, nodeSegments) {
   mesh.geometry = geometry;
 }
 
+function updateEndArrowTransform(arrow, arc, options) {
+  if (!arrow || arc.role !== "end" || arc.arrow !== "target" || arc.points.length === 0) {
+    return false;
+  }
+  const endpoint = arc.points.at(-1);
+  const direction = normalizeVec3(arc.endTangent);
+  if (!direction || normVec3(direction) === 0) return false;
+  const length = options.arrowLength ?? DEFAULT_ARROW_LENGTH;
+  const unit = threeVector(direction).normalize();
+  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), unit);
+  arrow.position.copy(threeVector(endpoint).addScaledVector(unit, -length / 2));
+  return true;
+}
+
 function addEndArrow(scene, arc, options) {
   if (arc.role !== "end" || arc.arrow !== "target" || arc.points.length === 0) return null;
-  const endpoint = arc.points.at(-1);
   const direction = normalizeVec3(arc.endTangent);
   if (!direction || normVec3(direction) === 0) return null;
 
@@ -336,9 +356,7 @@ function addEndArrow(scene, arc, options) {
   const geometry = new THREE.ConeGeometry(radius, length, 12);
   const material = new THREE.MeshBasicMaterial({ color: arc.colorTo });
   const arrow = new THREE.Mesh(geometry, material);
-  const unit = threeVector(direction).normalize();
-  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), unit);
-  arrow.position.copy(threeVector(endpoint).addScaledVector(unit, -length / 2));
+  updateEndArrowTransform(arrow, arc, options);
   arrow.userData = { kind: "end-arrow", arcId: arc.arcId, linkId: arc.linkId };
   scene.add(arrow);
   return arrow;
@@ -516,6 +534,65 @@ function applyThreePresentationState(state) {
   return presentation;
 }
 
+function currentArcSamples(state) {
+  return new Map((state.lodPlan?.arcs ?? []).map((arc) => [arc.arcId, arc.samplesPerTurn]));
+}
+
+function syncLiveSceneData(state) {
+  const nextData = buildThreeSceneData(state.visualModel, state.liveSimulation, state.options);
+  const samples = currentArcSamples(state);
+
+  for (const node of nextData.nodes) {
+    const mesh = state.nodeMeshes.get(node.linkId);
+    const rootHalo = state.rootHalos.get(node.linkId);
+    const debugHalo = state.debugHalos.get(node.linkId);
+    if (!mesh) continue;
+    mesh.position.copy(threeVector(node.position));
+    if (rootHalo) rootHalo.position.copy(mesh.position);
+    if (debugHalo) debugHalo.position.copy(mesh.position);
+  }
+
+  for (const arc of nextData.arcs) {
+    const line = state.arcLines.get(arc.arcId);
+    const arrow = state.arrows.get(arc.arcId);
+    if (line) {
+      replaceArcLineGeometry(
+        line,
+        arc,
+        samples.get(arc.arcId) ?? DEFAULT_SAMPLES_PER_TURN,
+      );
+    }
+    if (arrow) updateEndArrowTransform(arrow, arc, state.options);
+  }
+
+  state.data = nextData;
+  return nextData;
+}
+
+function requestLiveFrame(state) {
+  if (
+    state.destroyed
+    || state.animationFrame != null
+    || typeof globalThis.requestAnimationFrame !== "function"
+  ) return;
+
+  state.animationFrame = globalThis.requestAnimationFrame(() => {
+    state.animationFrame = null;
+    if (state.destroyed) return;
+
+    if (state.liveSimulation?.awake) {
+      stepLivePhysicalSimulation3d(state.liveSimulation);
+      syncLiveSceneData(state);
+      applyThreeLodState(state);
+      renderState(state);
+    }
+
+    if (state.liveSimulation?.awake || state.draggingLinkId != null) {
+      requestLiveFrame(state);
+    }
+  });
+}
+
 function configureControls(state) {
   const controls = new OrbitControls(state.camera, state.renderer.domElement);
   controls.enableDamping = false;
@@ -543,12 +620,31 @@ function pointerCoordinates(state, event) {
   };
 }
 
-function pickLinkId(state, event) {
+function setPointerRay(state, event) {
   const pointer = pointerCoordinates(state, event);
   state.pointer.set(pointer.x, pointer.y);
   state.raycaster.setFromCamera(state.pointer, state.camera);
+}
+
+function pickLinkIntersection(state, event) {
+  setPointerRay(state, event);
   const candidates = [...state.nodeMeshes.values()].filter((mesh) => mesh.visible);
-  return resolvePickedLinkId3d(state.raycaster.intersectObjects(candidates, false));
+  const intersections = state.raycaster.intersectObjects(candidates, false);
+  for (const intersection of intersections) {
+    if (intersection.object?.userData?.kind !== "link-center") continue;
+    if (intersection.object.userData.linkId == null) continue;
+    return {
+      linkId: intersection.object.userData.linkId,
+      root: Boolean(intersection.object.userData.root),
+      object: intersection.object,
+      point: intersection.point,
+    };
+  }
+  return null;
+}
+
+function pickLinkId(state, event) {
+  return pickLinkIntersection(state, event)?.linkId ?? null;
 }
 
 function applyPickedLink(state, event) {
@@ -559,34 +655,156 @@ function applyPickedLink(state, event) {
   return selected;
 }
 
+function dragTargetFromEvent(state, event) {
+  if (!state.dragCandidate) return null;
+  setPointerRay(state, event);
+  const point = state.raycaster.ray.intersectPlane(
+    state.dragCandidate.plane,
+    new THREE.Vector3(),
+  );
+  if (!point) return null;
+  return point.add(state.dragCandidate.offset);
+}
+
+function releasePointerDrag(state) {
+  if (state.draggingLinkId != null) {
+    releaseLivePhysicalNode3d(state.liveSimulation, state.draggingLinkId);
+    state.draggingLinkId = null;
+    requestLiveFrame(state);
+  }
+  if (state.controls) state.controls.enabled = true;
+  const canvas = state.renderer.domElement;
+  if (
+    state.activePointerId != null
+    && typeof canvas.hasPointerCapture === "function"
+    && canvas.hasPointerCapture(state.activePointerId)
+  ) {
+    canvas.releasePointerCapture(state.activePointerId);
+  }
+  state.activePointerId = null;
+  state.dragCandidate = null;
+}
+
 function configurePicking(state) {
   const canvas = state.renderer.domElement;
   const onPointerDown = (event) => {
-    if (event.pointerType === "touch") return;
-    state.pointerDown = { x: event.clientX, y: event.clientY };
+    if (event.pointerType === "touch" || event.button !== 0) return;
+    const hit = pickLinkIntersection(state, event);
+    state.pointerDown = {
+      x: event.clientX,
+      y: event.clientY,
+      hit,
+    };
+    state.activePointerId = hit ? event.pointerId : null;
+    state.dragCandidate = null;
+
+    if (!hit) return;
+    if (state.controls) state.controls.enabled = false;
+    if (hit.root) return;
+
+    const normal = state.camera.getWorldDirection(new THREE.Vector3()).normalize();
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hit.object.position);
+    setPointerRay(state, event);
+    const anchor = state.raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+    if (!anchor) return;
+    state.dragCandidate = {
+      linkId: hit.linkId,
+      plane,
+      offset: hit.object.position.clone().sub(anchor),
+    };
   };
+
   const onPointerMove = (event) => {
     if (event.pointerType === "touch") return;
+    const down = state.pointerDown;
+    if (down?.hit && state.dragCandidate) {
+      const distance = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+      if (state.draggingLinkId != null || distance > POINTER_TAP_DISTANCE) {
+        if (state.draggingLinkId == null) {
+          const mesh = state.nodeMeshes.get(state.dragCandidate.linkId);
+          if (!mesh || !pinLivePhysicalNode3d(
+            state.liveSimulation,
+            state.dragCandidate.linkId,
+            cloneVec3(mesh.position),
+          )) return;
+          state.draggingLinkId = state.dragCandidate.linkId;
+          state.selectedLinkId = state.draggingLinkId;
+          applyThreePresentationState(state);
+          state.options.onSelectLink?.(state.draggingLinkId);
+          if (typeof canvas.setPointerCapture === "function") {
+            canvas.setPointerCapture(event.pointerId);
+            state.activePointerId = event.pointerId;
+          }
+        }
+
+        const target = dragTargetFromEvent(state, event);
+        if (target) {
+          movePinnedLivePhysicalNode3d(
+            state.liveSimulation,
+            state.draggingLinkId,
+            cloneVec3(target),
+          );
+          syncLiveSceneData(state);
+          applyThreeLodState(state);
+          renderState(state);
+          requestLiveFrame(state);
+        }
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (down?.hit) return;
     const next = pickLinkId(state, event);
     if (next === state.hoveredLinkId) return;
     state.hoveredLinkId = next;
     applyThreePresentationState(state);
   };
+
   const onPointerLeave = () => {
-    state.pointerDown = null;
+    if (state.draggingLinkId != null) return;
+    if (state.pointerDown?.hit) {
+      state.pointerDown = null;
+      releasePointerDrag(state);
+    }
     if (state.hoveredLinkId == null) return;
     state.hoveredLinkId = null;
     applyThreePresentationState(state);
   };
+
   const onPointerUp = (event) => {
     if (event.pointerType === "touch") return;
     const down = state.pointerDown;
     state.pointerDown = null;
+
+    if (state.draggingLinkId != null) {
+      const target = dragTargetFromEvent(state, event);
+      if (target) {
+        movePinnedLivePhysicalNode3d(
+          state.liveSimulation,
+          state.draggingLinkId,
+          cloneVec3(target),
+        );
+      }
+      releasePointerDrag(state);
+      syncLiveSceneData(state);
+      applyThreeLodState(state);
+      renderState(state);
+      return;
+    }
+
+    releasePointerDrag(state);
     if (!down) return;
     const distance = Math.hypot(event.clientX - down.x, event.clientY - down.y);
     if (distance > POINTER_TAP_DISTANCE) return;
     applyPickedLink(state, event);
   };
+
+  const onPointerCancel = () => {
+    state.pointerDown = null;
+    releasePointerDrag(state);
+  };
+
   const onTouchStart = (event) => {
     if (event.touches.length !== 1) {
       state.touchDown = null;
@@ -612,10 +830,17 @@ function configurePicking(state) {
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerleave", onPointerLeave);
   canvas.addEventListener("pointerup", onPointerUp);
+  canvas.addEventListener("pointercancel", onPointerCancel);
   canvas.addEventListener("touchstart", onTouchStart, { passive: true });
   canvas.addEventListener("touchend", onTouchEnd, { passive: true });
   canvas.addEventListener("touchcancel", onTouchCancel, { passive: true });
-  state.pointerListeners = { onPointerDown, onPointerMove, onPointerLeave, onPointerUp };
+  state.pointerListeners = {
+    onPointerDown,
+    onPointerMove,
+    onPointerLeave,
+    onPointerUp,
+    onPointerCancel,
+  };
   state.touchListeners = { onTouchStart, onTouchEnd, onTouchCancel };
 }
 
@@ -695,6 +920,20 @@ export function get3dSelectedLink(container) {
   return rendererStates.get(container)?.selectedLinkId ?? null;
 }
 
+export function get3dLivePhysicsSnapshot(container) {
+  const state = rendererStates.get(container);
+  if (!state?.liveSimulation) return null;
+  return {
+    tick: state.liveSimulation.tick,
+    awake: state.liveSimulation.awake,
+    draggingLinkId: state.draggingLinkId,
+    pinnedNodeIds: [...state.liveSimulation.pinnedPositions.keys()],
+    positions: structuredClone(state.liveSimulation.positions),
+    velocities: structuredClone(state.liveSimulation.velocities),
+    options: { ...state.liveSimulation.options, depths: undefined, initialPositions: undefined, initialVelocities: undefined },
+  };
+}
+
 export function get3dPerformanceSnapshot(container) {
   const state = rendererStates.get(container);
   if (!state) return null;
@@ -712,15 +951,21 @@ export function get3dPerformanceSnapshot(container) {
 
 export function create3dRenderer(container, visualModel, physicalState, options = {}) {
   destroy3dRenderer(container);
-  const data = buildThreeSceneData(visualModel, physicalState, options);
+  const liveSimulation = createLivePhysicalSimulation3d(visualModel, {
+    ...(physicalState?.options ?? {}),
+    ...(options.physics ?? {}),
+    initialPositions: physicalPositions(physicalState),
+    initialVelocities: physicalState?.velocities ?? null,
+  });
+  const data = buildThreeSceneData(visualModel, liveSimulation, options);
   const readabilityAudit = auditReadability3d(
-    physicalPositions(physicalState),
+    physicalPositions(liveSimulation),
     data,
     options.readability,
   );
   const performanceBudget = buildPerformanceBudget3d({
     visualModel,
-    physicalState,
+    physicalState: liveSimulation,
     sceneData: data,
     readabilityAudit,
   }, options.budgets);
@@ -774,7 +1019,8 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     target: new THREE.Vector3(),
     resizeObserver: null,
     visualModel,
-    physicalState,
+    physicalState: liveSimulation,
+    liveSimulation,
     data,
     options: { ...options },
     nodeMeshes,
@@ -791,6 +1037,9 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     pointerListeners: null,
     touchListeners: null,
     pointerDown: null,
+    activePointerId: null,
+    dragCandidate: null,
+    draggingLinkId: null,
     touchDown: null,
     debugState: options.debugState ?? null,
     selectedLinkId: options.selectedLinkId ?? null,
@@ -799,6 +1048,8 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     lodPlan: null,
     readabilityAudit,
     performanceBudget,
+    animationFrame: null,
+    destroyed: false,
   };
   rendererStates.set(container, state);
   configureControls(state);
@@ -806,6 +1057,7 @@ export function create3dRenderer(container, visualModel, physicalState, options 
   resize3dRenderer(container);
   fit3dRenderer(container);
   applyThreePresentationState(state);
+  requestLiveFrame(state);
 
   if (typeof ResizeObserver === "function") {
     state.resizeObserver = new ResizeObserver(() => resize3dRenderer(container));
@@ -821,6 +1073,11 @@ export function update3dRenderer(container, visualModel, physicalState, options 
 export function destroy3dRenderer(container) {
   const state = rendererStates.get(container);
   if (!state) return false;
+  state.destroyed = true;
+  if (state.animationFrame != null && typeof globalThis.cancelAnimationFrame === "function") {
+    globalThis.cancelAnimationFrame(state.animationFrame);
+    state.animationFrame = null;
+  }
   state.resizeObserver?.disconnect();
   if (state.controls && state.controlsChangeListener) {
     state.controls.removeEventListener("change", state.controlsChangeListener);
@@ -828,11 +1085,19 @@ export function destroy3dRenderer(container) {
   state.controls?.dispose();
 
   const canvas = state.renderer.domElement;
+  if (
+    state.activePointerId != null
+    && typeof canvas.hasPointerCapture === "function"
+    && canvas.hasPointerCapture(state.activePointerId)
+  ) {
+    canvas.releasePointerCapture(state.activePointerId);
+  }
   if (state.pointerListeners) {
     canvas.removeEventListener("pointerdown", state.pointerListeners.onPointerDown);
     canvas.removeEventListener("pointermove", state.pointerListeners.onPointerMove);
     canvas.removeEventListener("pointerleave", state.pointerListeners.onPointerLeave);
     canvas.removeEventListener("pointerup", state.pointerListeners.onPointerUp);
+    canvas.removeEventListener("pointercancel", state.pointerListeners.onPointerCancel);
   }
   if (state.touchListeners) {
     canvas.removeEventListener("touchstart", state.touchListeners.onTouchStart);
