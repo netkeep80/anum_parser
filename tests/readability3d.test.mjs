@@ -57,7 +57,7 @@ test("world-space audit видит center, curve-center и curve-curve near coll
     R: { x: 0, y: 2, z: 0 },
     A: { x: -1, y: 0, z: 0 },
     B: { x: 1, y: 0, z: 0 },
-    C: { x: 0, y: 0.05, z: 0 },
+    C: { x: -0.9, y: 0.05, z: 0 },
   };
   const audit = auditReadability3d(positions, simpleScene(), {
     minimumCenterDistance: 0.2,
