@@ -161,3 +161,29 @@ test("Three renderer зависит от local package boundary, но не чи�
   assert.doesNotMatch(source, /parseArtifact|\.aset\.json/i);
   assert.doesNotMatch(source, /https?:\/\//i);
 });
+
+test("UI сохраняет 2D default и явно переключает 2D/3D renderer lifecycle", async () => {
+  const [html, app] = await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../src/app.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(html, /id="graphView"/);
+  assert.match(html, /<option value="2d" selected>2D — структурная карта<\/option>/);
+  assert.match(html, /<option value="3d">3D — механическая асеть<\/option>/);
+  assert.match(app, /graphView:\s*"2d"/);
+  assert.match(app, /state\.visualModel = buildVisualModel\(aset\)/);
+  assert.match(app, /solvePhysicalLayout3d\(state\.visualModel\)/);
+  assert.match(app, /create3dRenderer\(ui\.graph, state\.visualModel, state\.physicalState\)/);
+  assert.match(app, /destroy3dRenderer\(ui\.graph\)/);
+  assert.match(app, /renderAset\(ui\.graph, aset,/);
+  assert.match(app, /ui\.graphLayout\.disabled = is3d/);
+});
+
+test("browser Three import map остаётся exact-local и не использует remote Three CDN", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+
+  assert.match(html, /"three":\s*"\.\/vendor\/three\/three\.module\.js"/);
+  assert.match(html, /"three\/addons\/":\s*"\.\/vendor\/three\/addons\/"/);
+  assert.doesNotMatch(html, /https?:\/\/[^"'\s]*three/i);
+});
