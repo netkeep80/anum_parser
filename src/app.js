@@ -15,6 +15,15 @@ import {
   set3dSelectedLink,
   zoom3dRenderer,
 } from "./three-renderer.js";
+import {
+  createBlueprintRenderer,
+  destroyBlueprintRenderer,
+  fitBlueprintRenderer,
+  getBlueprintRendererSnapshot,
+  setBlueprintDebugState,
+  setBlueprintSelectedLink,
+  zoomBlueprintRenderer,
+} from "./blueprint-renderer.js";
 import { buildVisualModel } from "./visual-model.js";
 import {
   GRAPH_LAYOUTS,
@@ -35,6 +44,7 @@ const state = {
   graphView: "2d",
   visualModel: null,
   physicalState: null,
+  blueprintPositions: null,
   selectedLinkId: null,
   graphWarning: null,
   physicsOptions: {
@@ -213,6 +223,7 @@ function render() {
   renderComparison();
   state.visualModel = buildVisualModel(aset);
   state.physicalState = null;
+  state.blueprintPositions = null;
   state.selectedLinkId = null;
   renderGraph();
   renderDebugger();
@@ -221,7 +232,8 @@ function render() {
 
 async function changeGraphView() {
   clearStatus();
-  const nextView = ui.graphView.value === "3d" ? "3d" : "2d";
+  const requested = ui.graphView.value;
+  const nextView = requested === "3d" || requested === "blueprint" ? requested : "2d";
   if (nextView !== "3d" && graphIsFullscreen()) await exitGraphFullscreen();
   state.graphView = nextView;
   renderGraph();
@@ -234,6 +246,11 @@ function currentDebugState() {
   return trace.length > 0 ? trace[state.debugStep] ?? null : null;
 }
 
+function captureBlueprintPositions() {
+  const snapshot = getBlueprintRendererSnapshot(ui.graph);
+  if (snapshot?.positions) state.blueprintPositions = snapshot.positions;
+}
+
 function renderGraph() {
   const aset = state.result?.aset;
   if (!aset) return;
@@ -242,6 +259,8 @@ function renderGraph() {
 
   if (state.graphView === "3d") {
     try {
+      captureBlueprintPositions();
+      destroyBlueprintRenderer(ui.graph);
       destroyGraph(ui.graph);
       state.physicalState ??= solveReadableLayout3d(state.visualModel);
       create3dRenderer(ui.graph, state.visualModel, state.physicalState, {
@@ -265,7 +284,21 @@ function renderGraph() {
         visualModel: state.visualModel,
       });
     }
+  } else if (state.graphView === "blueprint") {
+    destroy3dRenderer(ui.graph);
+    destroyGraph(ui.graph);
+    createBlueprintRenderer(ui.graph, state.visualModel, {
+      positions: state.blueprintPositions,
+      debugState: currentDebugState(),
+      selectedLinkId: state.selectedLinkId,
+      onSelectLink: (linkId) => {
+        state.selectedLinkId = linkId;
+      },
+    });
+    setBlueprintSelectedLink(ui.graph, state.selectedLinkId);
   } else {
+    captureBlueprintPositions();
+    destroyBlueprintRenderer(ui.graph);
     destroy3dRenderer(ui.graph);
     renderAset(ui.graph, aset, {
       layout: ui.graphLayout.value,
@@ -277,11 +310,12 @@ function renderGraph() {
 
 function updateGraphControls() {
   const is3d = state.graphView === "3d";
+  const is2d = state.graphView === "2d";
   ui.graphView.value = state.graphView;
-  ui.graphLayout.disabled = is3d;
-  ui.graphLayout.title = is3d
-    ? "Раскладки Cytoscape относятся только к структурному 2D-представлению"
-    : "Алгоритм авторазвёртки 2D";
+  ui.graphLayout.disabled = !is2d;
+  ui.graphLayout.title = is2d
+    ? "Алгоритм авторазвёртки структурного 2D"
+    : "Раскладки Cytoscape относятся только к структурному 2D-представлению";
   ui.graphPhysicsControls.hidden = !is3d;
   ui.graph.dataset.viewMode = state.graphView;
   renderPhysicsControls();
@@ -412,11 +446,13 @@ function handleFullscreenEscape(event) {
 
 function fitCurrentGraph() {
   if (state.graphView === "3d") fit3dRenderer(ui.graph);
+  else if (state.graphView === "blueprint") fitBlueprintRenderer(ui.graph);
   else fitGraph(ui.graph);
 }
 
 function zoomCurrentGraph(factor) {
   if (state.graphView === "3d") zoom3dRenderer(ui.graph, factor);
+  else if (state.graphView === "blueprint") zoomBlueprintRenderer(ui.graph, factor);
   else zoomGraph(ui.graph, factor);
 }
 
@@ -463,6 +499,7 @@ function renderDebugger() {
     ui.debugStack.replaceChildren(textNode("Стек недоступен для этого входа."));
     ui.debugEffects.textContent = "—";
     if (state.graphView === "3d") set3dDebugState(ui.graph, null);
+    else if (state.graphView === "blueprint") setBlueprintDebugState(ui.graph, null);
     else setGraphDebugState(ui.graph, null);
     updateTraceSelection();
     return;
@@ -488,6 +525,7 @@ function renderDebugger() {
     `переиспользовано: ${(item.reusedLinks ?? []).join(", ") || "—"}`,
   ].join("\n");
   if (state.graphView === "3d") set3dDebugState(ui.graph, item);
+  else if (state.graphView === "blueprint") setBlueprintDebugState(ui.graph, item);
   else setGraphDebugState(ui.graph, item);
   updateTraceSelection();
 }
