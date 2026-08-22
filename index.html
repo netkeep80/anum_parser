@@ -62,6 +62,7 @@
             <label for="graphView">Представление</label>
             <select id="graphView" title="Представление асети">
               <option value="2d" selected>2D — структурная карта</option>
+              <option value="blueprint">2D — blueprint связей</option>
               <option value="3d">3D — механическая асеть</option>
             </select>
             <label for="graphLayout">Раскладка 2D</label>
@@ -74,7 +75,7 @@
         </div>
         <div class="graph-meta">
           <span class="legend"><i class="start-line"></i> начало &nbsp; <i class="end-line"></i> конец</span>
-          <span class="hint">2D — структурная глубина · 3D — пружины и одноимённые GREEN-заряды</span>
+          <span class="hint">2D — структурная глубина · blueprint — цельные связи start→center→end · 3D — живая механика</span>
         </div>
         <div id="graphPhysicsControls" class="graph-physics-controls" aria-label="Параметры живой 3D-механики" hidden>
           <label class="physics-range" for="graphCharge">
