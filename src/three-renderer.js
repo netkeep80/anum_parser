@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import {
   addVec3,
@@ -9,6 +10,10 @@ import {
   springCurveAroundCenterline3d,
   subtractVec3,
 } from "./geometry3d.js";
+import {
+  normalizeVisualDebugState,
+  visualDebugFlags,
+} from "./visual-model.js";
 
 const rendererStates = new WeakMap();
 const DEFAULT_BACKGROUND = 0x08101d;
@@ -20,6 +25,13 @@ const DEFAULT_SAMPLES_PER_TURN = 8;
 const DEFAULT_ARROW_RADIUS = 0.075;
 const DEFAULT_ARROW_LENGTH = 0.22;
 const DEFAULT_CAMERA_FOV = 50;
+const POINTER_TAP_DISTANCE = 6;
+const HALO_COLORS = Object.freeze({
+  current: 0xffd166,
+  selected: 0xffffff,
+  reused: 0x73a7ff,
+  hovered: 0xdde7f5,
+});
 
 function cloneVec3(point) {
   return { x: point.x, y: point.y, z: point.z };
@@ -58,6 +70,7 @@ export function buildThreeSceneData(visualModel, physicalState, options = {}) {
     nodes.push({
       id: node.id,
       linkId: node.linkId,
+      label: node.label,
       root: Boolean(node.root),
       position: cloneVec3(center),
       color: node.semanticColor,
@@ -124,6 +137,67 @@ export function buildThreeSceneData(visualModel, physicalState, options = {}) {
   };
 }
 
+export function buildThreePresentationState(
+  visualModel,
+  debugState = null,
+  selectedLinkId = null,
+  hoveredLinkId = null,
+) {
+  const normalized = normalizeVisualDebugState(visualModel, debugState);
+  const nodeStates = [];
+  const visibleIds = new Set(normalized.visibleLinkIds);
+
+  for (const node of visualModel?.nodes ?? []) {
+    const flags = visualDebugFlags(normalized, node.linkId);
+    const selected = selectedLinkId === node.linkId;
+    const hovered = hoveredLinkId === node.linkId;
+    const halo = flags.current
+      ? "current"
+      : selected
+        ? "selected"
+        : flags.reused
+          ? "reused"
+          : hovered
+            ? "hovered"
+            : null;
+    const scale = flags.current
+      ? 1.35
+      : selected
+        ? 1.25
+        : flags.produced
+          ? 1.16
+          : 1;
+    nodeStates.push({
+      linkId: node.linkId,
+      visible: flags.visible,
+      produced: flags.produced,
+      reused: flags.reused,
+      current: flags.current,
+      selected,
+      hovered,
+      scale,
+      halo,
+      labelVisible: flags.visible && (node.root || flags.current || selected || hovered),
+    });
+  }
+
+  const arcStates = (visualModel?.arcs ?? []).map((arc) => ({
+    arcId: arc.id,
+    visible: visibleIds.has(arc.semanticSource) && visibleIds.has(arc.semanticTarget),
+  }));
+
+  return { debugState: normalized, nodes: nodeStates, arcs: arcStates };
+}
+
+export function resolvePickedLinkId3d(intersections) {
+  for (const intersection of intersections ?? []) {
+    const object = intersection?.object;
+    if (object?.userData?.kind !== "link-center") continue;
+    if (object.userData.linkId != null) return object.userData.linkId;
+  }
+  return null;
+}
+
 function threeVector(point) {
   return new THREE.Vector3(point.x, point.y, point.z);
 }
@@ -136,6 +210,7 @@ function addNodeMesh(scene, node, options) {
   mesh.userData = { kind: "link-center", linkId: node.linkId, root: node.root };
   scene.add(mesh);
 
+  let rootHalo = null;
   if (node.root) {
     const haloGeometry = new THREE.SphereGeometry(
       node.radius * (options.rootHaloScale ?? 1.55),
@@ -148,15 +223,31 @@ function addNodeMesh(scene, node, options) {
       transparent: true,
       opacity: 0.55,
     });
-    const halo = new THREE.Mesh(haloGeometry, haloMaterial);
-    halo.position.copy(mesh.position);
-    halo.userData = { kind: "root-halo", linkId: node.linkId };
-    scene.add(halo);
+    rootHalo = new THREE.Mesh(haloGeometry, haloMaterial);
+    rootHalo.position.copy(mesh.position);
+    rootHalo.userData = { kind: "root-halo", linkId: node.linkId };
+    scene.add(rootHalo);
   }
+
+  const debugGeometry = new THREE.SphereGeometry(node.radius * 1.75, 16, 12);
+  const debugMaterial = new THREE.MeshBasicMaterial({
+    color: HALO_COLORS.current,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.8,
+    depthTest: true,
+  });
+  const debugHalo = new THREE.Mesh(debugGeometry, debugMaterial);
+  debugHalo.position.copy(mesh.position);
+  debugHalo.visible = false;
+  debugHalo.userData = { kind: "debug-halo", linkId: node.linkId };
+  scene.add(debugHalo);
+
+  return { mesh, rootHalo, debugHalo };
 }
 
 function addArcLine(scene, arc) {
-  if (arc.points.length < 2) return;
+  if (arc.points.length < 2) return null;
   const geometry = new THREE.BufferGeometry().setFromPoints(arc.points.map(threeVector));
   const from = new THREE.Color(arc.colorFrom);
   const to = new THREE.Color(arc.colorTo);
@@ -178,13 +269,14 @@ function addArcLine(scene, arc) {
     forceSpring: arc.forceSpring,
   };
   scene.add(line);
+  return line;
 }
 
 function addEndArrow(scene, arc, options) {
-  if (arc.role !== "end" || arc.arrow !== "target" || arc.points.length === 0) return;
+  if (arc.role !== "end" || arc.arrow !== "target" || arc.points.length === 0) return null;
   const endpoint = arc.points.at(-1);
   const direction = normalizeVec3(arc.endTangent);
-  if (!direction || normVec3(direction) === 0) return;
+  if (!direction || normVec3(direction) === 0) return null;
 
   const radius = options.arrowRadius ?? DEFAULT_ARROW_RADIUS;
   const length = options.arrowLength ?? DEFAULT_ARROW_LENGTH;
@@ -196,6 +288,43 @@ function addEndArrow(scene, arc, options) {
   arrow.position.copy(threeVector(endpoint).addScaledVector(unit, -length / 2));
   arrow.userData = { kind: "end-arrow", arcId: arc.arcId, linkId: arc.linkId };
   scene.add(arrow);
+  return arrow;
+}
+
+function createLabelLayer(container) {
+  if (!container.style.position) container.style.position = "relative";
+  const layer = document.createElement("div");
+  Object.assign(layer.style, {
+    position: "absolute",
+    inset: "0",
+    overflow: "hidden",
+    pointerEvents: "none",
+    zIndex: "2",
+  });
+  layer.dataset.role = "three-label-layer";
+  return layer;
+}
+
+function createNodeLabel(node) {
+  const label = document.createElement("div");
+  label.textContent = node.label ?? node.linkId;
+  label.dataset.linkId = node.linkId;
+  Object.assign(label.style, {
+    position: "absolute",
+    display: "none",
+    maxWidth: "220px",
+    padding: "2px 5px",
+    borderRadius: "5px",
+    color: "#eef6ff",
+    background: "rgba(5, 13, 25, 0.82)",
+    border: "1px solid rgba(103, 232, 179, 0.45)",
+    fontSize: "11px",
+    lineHeight: "1.2",
+    whiteSpace: "pre",
+    transform: "translate(-50%, -115%)",
+    userSelect: "none",
+  });
+  return label;
 }
 
 function disposeObject(object) {
@@ -207,15 +336,142 @@ function disposeObject(object) {
   }
 }
 
-function renderState(state) {
-  state.renderer.render(state.scene, state.camera);
-}
-
 function viewportSize(container) {
   return {
     width: Math.max(1, container.clientWidth || container.getBoundingClientRect?.().width || 1),
     height: Math.max(1, container.clientHeight || container.getBoundingClientRect?.().height || 1),
   };
+}
+
+function updateLabelPositions(state) {
+  const { width, height } = viewportSize(state.container);
+  for (const node of state.data.nodes) {
+    const label = state.labels.get(node.linkId);
+    const mesh = state.nodeMeshes.get(node.linkId);
+    if (!label || !mesh || label.style.display === "none" || !mesh.visible) continue;
+    const projected = mesh.position.clone().project(state.camera);
+    const onScreen = projected.z >= -1 && projected.z <= 1
+      && projected.x >= -1.15 && projected.x <= 1.15
+      && projected.y >= -1.15 && projected.y <= 1.15;
+    label.style.visibility = onScreen ? "visible" : "hidden";
+    label.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
+    label.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
+  }
+}
+
+function renderState(state) {
+  state.renderer.render(state.scene, state.camera);
+  updateLabelPositions(state);
+}
+
+function applyThreePresentationState(state) {
+  const presentation = buildThreePresentationState(
+    state.visualModel,
+    state.debugState,
+    state.selectedLinkId,
+    state.hoveredLinkId,
+  );
+  const nodeStates = new Map(presentation.nodes.map((node) => [node.linkId, node]));
+  const arcStates = new Map(presentation.arcs.map((arc) => [arc.arcId, arc]));
+
+  for (const node of state.data.nodes) {
+    const current = nodeStates.get(node.linkId);
+    const mesh = state.nodeMeshes.get(node.linkId);
+    const rootHalo = state.rootHalos.get(node.linkId);
+    const debugHalo = state.debugHalos.get(node.linkId);
+    const label = state.labels.get(node.linkId);
+    if (!current || !mesh) continue;
+
+    mesh.visible = current.visible;
+    mesh.scale.setScalar(current.scale);
+    if (rootHalo) rootHalo.visible = current.visible;
+    if (debugHalo) {
+      debugHalo.visible = current.visible && Boolean(current.halo);
+      if (current.halo) debugHalo.material.color.setHex(HALO_COLORS[current.halo]);
+      debugHalo.scale.setScalar(current.current ? 1.12 : 1);
+    }
+    if (label) label.style.display = current.labelVisible ? "block" : "none";
+  }
+
+  for (const arc of state.data.arcs) {
+    const visible = arcStates.get(arc.arcId)?.visible ?? false;
+    const line = state.arcLines.get(arc.arcId);
+    const arrow = state.arrows.get(arc.arcId);
+    if (line) line.visible = visible;
+    if (arrow) arrow.visible = visible;
+  }
+
+  state.presentation = presentation;
+  renderState(state);
+  return presentation;
+}
+
+function configureControls(state) {
+  const controls = new OrbitControls(state.camera, state.renderer.domElement);
+  controls.enableDamping = false;
+  controls.enablePan = true;
+  controls.enableRotate = true;
+  controls.enableZoom = true;
+  controls.screenSpacePanning = true;
+  controls.minDistance = 0.2;
+  controls.maxDistance = 500;
+  state.renderer.domElement.style.touchAction = "none";
+  const onChange = () => renderState(state);
+  controls.addEventListener("change", onChange);
+  state.controls = controls;
+  state.controlsChangeListener = onChange;
+}
+
+function pointerCoordinates(state, event) {
+  const rect = state.renderer.domElement.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+    y: -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1,
+  };
+}
+
+function pickLinkId(state, event) {
+  const pointer = pointerCoordinates(state, event);
+  state.pointer.set(pointer.x, pointer.y);
+  state.raycaster.setFromCamera(state.pointer, state.camera);
+  const candidates = [...state.nodeMeshes.values()].filter((mesh) => mesh.visible);
+  return resolvePickedLinkId3d(state.raycaster.intersectObjects(candidates, false));
+}
+
+function configurePicking(state) {
+  const canvas = state.renderer.domElement;
+  const onPointerDown = (event) => {
+    state.pointerDown = { x: event.clientX, y: event.clientY };
+  };
+  const onPointerMove = (event) => {
+    const next = pickLinkId(state, event);
+    if (next === state.hoveredLinkId) return;
+    state.hoveredLinkId = next;
+    applyThreePresentationState(state);
+  };
+  const onPointerLeave = () => {
+    state.pointerDown = null;
+    if (state.hoveredLinkId == null) return;
+    state.hoveredLinkId = null;
+    applyThreePresentationState(state);
+  };
+  const onPointerUp = (event) => {
+    const down = state.pointerDown;
+    state.pointerDown = null;
+    if (!down) return;
+    const distance = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+    if (distance > POINTER_TAP_DISTANCE) return;
+    const selected = pickLinkId(state, event);
+    state.selectedLinkId = selected;
+    applyThreePresentationState(state);
+    state.options.onSelectLink?.(selected);
+  };
+
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerleave", onPointerLeave);
+  canvas.addEventListener("pointerup", onPointerUp);
+  state.pointerListeners = { onPointerDown, onPointerMove, onPointerLeave, onPointerUp };
 }
 
 export function resize3dRenderer(container) {
@@ -234,25 +490,29 @@ export function fit3dRenderer(container) {
   if (!state) return false;
   const bounds = new THREE.Box3().setFromObject(state.scene);
   if (bounds.isEmpty()) {
+    state.target.set(0, 0, 0);
     state.camera.position.set(0, 0, 4);
-    state.camera.lookAt(0, 0, 0);
-    renderState(state);
-    return true;
+  } else {
+    const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(0.5, sphere.radius);
+    const fov = THREE.MathUtils.degToRad(state.camera.fov);
+    const distance = radius / Math.tan(fov / 2) * 1.35;
+    const direction = new THREE.Vector3(1.1, 0.82, 1.35).normalize();
+    state.target.copy(sphere.center);
+    state.camera.position.copy(sphere.center).addScaledVector(direction, distance);
+    state.camera.near = Math.max(0.01, distance / 200);
+    state.camera.far = Math.max(100, distance * 20);
+    state.camera.updateProjectionMatrix();
   }
-
-  const sphere = bounds.getBoundingSphere(new THREE.Sphere());
-  const radius = Math.max(0.5, sphere.radius);
-  const fov = THREE.MathUtils.degToRad(state.camera.fov);
-  const distance = radius / Math.tan(fov / 2) * 1.35;
-  const direction = new THREE.Vector3(1.1, 0.82, 1.35).normalize();
-  state.target.copy(sphere.center);
-  state.camera.position.copy(sphere.center).addScaledVector(direction, distance);
-  state.camera.near = Math.max(0.01, distance / 200);
-  state.camera.far = Math.max(100, distance * 20);
-  state.camera.updateProjectionMatrix();
+  state.controls?.target.copy(state.target);
+  state.controls?.update();
   state.camera.lookAt(state.target);
   renderState(state);
   return true;
+}
+
+export function reset3dRenderer(container) {
+  return fit3dRenderer(container);
 }
 
 export function zoom3dRenderer(container, factor) {
@@ -262,9 +522,30 @@ export function zoom3dRenderer(container, factor) {
   const nextDistance = Math.max(0.25, Math.min(500, offset.length() / factor));
   offset.setLength(nextDistance);
   state.camera.position.copy(state.target).add(offset);
+  state.controls?.target.copy(state.target);
+  state.controls?.update();
   state.camera.lookAt(state.target);
   renderState(state);
   return true;
+}
+
+export function set3dDebugState(container, debugState) {
+  const state = rendererStates.get(container);
+  if (!state) return null;
+  state.debugState = debugState;
+  return applyThreePresentationState(state);
+}
+
+export function set3dSelectedLink(container, linkId) {
+  const state = rendererStates.get(container);
+  if (!state) return false;
+  state.selectedLinkId = state.nodeMeshes.has(linkId) ? linkId : null;
+  applyThreePresentationState(state);
+  return true;
+}
+
+export function get3dSelectedLink(container) {
+  return rendererStates.get(container)?.selectedLinkId ?? null;
 }
 
 export function create3dRenderer(container, visualModel, physicalState, options = {}) {
@@ -273,10 +554,24 @@ export function create3dRenderer(container, visualModel, physicalState, options 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(options.background ?? DEFAULT_BACKGROUND);
 
-  for (const node of data.nodes) addNodeMesh(scene, node, options);
+  const nodeMeshes = new Map();
+  const rootHalos = new Map();
+  const debugHalos = new Map();
+  const arcLines = new Map();
+  const arrows = new Map();
+  const labels = new Map();
+
+  for (const node of data.nodes) {
+    const objects = addNodeMesh(scene, node, options);
+    nodeMeshes.set(node.linkId, objects.mesh);
+    if (objects.rootHalo) rootHalos.set(node.linkId, objects.rootHalo);
+    debugHalos.set(node.linkId, objects.debugHalo);
+  }
   for (const arc of data.arcs) {
-    addArcLine(scene, arc);
-    addEndArrow(scene, arc, options);
+    const line = addArcLine(scene, arc);
+    const arrow = addEndArrow(scene, arc, options);
+    if (line) arcLines.set(arc.arcId, line);
+    if (arrow) arrows.set(arc.arcId, arrow);
   }
 
   const camera = new THREE.PerspectiveCamera(
@@ -288,9 +583,18 @@ export function create3dRenderer(container, visualModel, physicalState, options 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  container.replaceChildren(renderer.domElement);
+  renderer.domElement.style.display = "block";
+
+  const labelLayer = createLabelLayer(container);
+  for (const node of data.nodes) {
+    const label = createNodeLabel(node);
+    labels.set(node.linkId, label);
+    labelLayer.append(label);
+  }
+  container.replaceChildren(renderer.domElement, labelLayer);
 
   const state = {
+    container,
     renderer,
     scene,
     camera,
@@ -300,10 +604,30 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     physicalState,
     data,
     options: { ...options },
+    nodeMeshes,
+    rootHalos,
+    debugHalos,
+    arcLines,
+    arrows,
+    labels,
+    labelLayer,
+    controls: null,
+    controlsChangeListener: null,
+    raycaster: new THREE.Raycaster(),
+    pointer: new THREE.Vector2(),
+    pointerListeners: null,
+    pointerDown: null,
+    debugState: options.debugState ?? null,
+    selectedLinkId: options.selectedLinkId ?? null,
+    hoveredLinkId: null,
+    presentation: null,
   };
   rendererStates.set(container, state);
+  configureControls(state);
+  configurePicking(state);
   resize3dRenderer(container);
   fit3dRenderer(container);
+  applyThreePresentationState(state);
 
   if (typeof ResizeObserver === "function") {
     state.resizeObserver = new ResizeObserver(() => resize3dRenderer(container));
@@ -320,11 +644,23 @@ export function destroy3dRenderer(container) {
   const state = rendererStates.get(container);
   if (!state) return false;
   state.resizeObserver?.disconnect();
+  if (state.controls && state.controlsChangeListener) {
+    state.controls.removeEventListener("change", state.controlsChangeListener);
+  }
+  state.controls?.dispose();
+
+  const canvas = state.renderer.domElement;
+  if (state.pointerListeners) {
+    canvas.removeEventListener("pointerdown", state.pointerListeners.onPointerDown);
+    canvas.removeEventListener("pointermove", state.pointerListeners.onPointerMove);
+    canvas.removeEventListener("pointerleave", state.pointerListeners.onPointerLeave);
+    canvas.removeEventListener("pointerup", state.pointerListeners.onPointerUp);
+  }
+
   state.scene.traverse(disposeObject);
   state.renderer.dispose();
-  if (state.renderer.domElement.parentNode === container) {
-    state.renderer.domElement.remove();
-  }
+  state.labelLayer.remove();
+  if (canvas.parentNode === container) canvas.remove();
   rendererStates.delete(container);
   return true;
 }
