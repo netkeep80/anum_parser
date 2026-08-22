@@ -59,8 +59,13 @@
         <div class="section-title graph-heading">
           <div><p class="eyebrow">Асеть связей</p><h2>Граф представления</h2></div>
           <div class="graph-toolbar" aria-label="Управление графом">
-            <label for="graphLayout">Раскладка</label>
-            <select id="graphLayout" title="Алгоритм авторазвёртки"></select>
+            <label for="graphView">Представление</label>
+            <select id="graphView" title="Представление асети">
+              <option value="2d" selected>2D — структурная карта</option>
+              <option value="3d">3D — механическая асеть</option>
+            </select>
+            <label for="graphLayout">Раскладка 2D</label>
+            <select id="graphLayout" title="Алгоритм авторазвёртки 2D"></select>
             <button id="graphFit" type="button" title="Вписать весь граф в область">Вписать</button>
             <button id="graphZoomOut" type="button" class="graph-zoom" title="Отдалить">−</button>
             <button id="graphZoomIn" type="button" class="graph-zoom" title="Приблизить">+</button>
@@ -68,7 +73,7 @@
         </div>
         <div class="graph-meta">
           <span class="legend"><i class="start-line"></i> начало &nbsp; <i class="end-line"></i> конец</span>
-          <span class="hint">Показываются только связи выбранного шага · колесо — масштаб · фон — перемещение · связь — перетаскивание</span>
+          <span class="hint">2D — структурная глубина · 3D — пружины и одноимённые GREEN-заряды</span>
         </div>
         <div id="graph" role="application" aria-label="Интерактивная визуализация асети"></div>
       </section>
