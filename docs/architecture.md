@@ -2,24 +2,34 @@
 
 `anum_parser` — статическая веб-лаборатория для исполнения, сравнения и визуализации ачисел МТС.
 
-Текущая accepted semantic authority находится **не в этом репозитории**, а в exact-pinned пакете `@mts/core` из `netkeep80/anum_docs`.
+Текущая нормативная семантика находится **не в этом репозитории**, а в точно зафиксированном пакете `@mts/core` из `netkeep80/anum_docs`.
 
 ```text
-accepted MTS       = v0.10
+accepted MTS       = v0.11
 package            = @mts/core@0.10.0
-upstream SHA       = 957c818d82bd3211f2a59547fff28e8ed0ec4331
-contract           = mts-contract/v0.10
-conformance        = mts-conformance/v0.10
+upstream SHA       = 6b7f616c7b275310aebdbe998da13c5811c91391
+contract           = mts-contract/v0.11
+conformance        = mts-conformance/v0.11
+artifact SHA256    = 6b4dbd701f46a6a339e20b892b8a5d9478bb40a9392415899291eb0fe30ddf9c
 consumer lock      = contracts/mts-core-consumer-lock.json
 ```
 
-Лабораторный id `anum-v0.4` сохранён для совместимости corpus/UI и **не является номером MTS release**.
+Версия пакета `@mts/core@0.10.0` сама по себе не является номером выпуска МТС. Точный выпуск определяется вместе состоянием исходного репозитория, контрактом, корпусом соответствия и контрольной суммой пакета.
 
-MTS v0.11 на текущем upstream остаётся candidate / NOT ACCEPTED и не является production dependency `anum_parser`.
+Лабораторный идентификатор `anum-v0.4` также сохранён для совместимости корпуса и интерфейса и **не является номером выпуска МТС**.
+
+Предыдущая принятая МТС v0.10 остаётся неизменяемым дифференциальным свидетельством:
+
+```text
+previous upstream SHA = 957c818d82bd3211f2a59547fff28e8ed0ec4331
+previous contract     = mts-contract/v0.10
+previous conformance  = mts-conformance/v0.10
+previous artifact     = 0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007
+```
 
 ## 1. Главная граница доверия
 
-Архитектура после синхронизации устроена так:
+Архитектура принятого четверичного пути устроена так:
 
 ```text
 strict physical input
@@ -47,15 +57,15 @@ local adapter may materialize only link(start,end)
 requests actually made by @mts/core
 ```
 
-Он не имеет права независимо решать accepted `OPEN/CLOSE/VALUE` semantics.
+Локальный адаптер не имеет права независимо определять принятые переходы `OPEN/CLOSE/VALUE`.
 
-Локальный `deserializeStack` остаётся только для явно `experimental` алгоритмов. Попытка использовать его с accepted status должна завершаться отказом.
+Локальный `deserializeStack` остаётся только для явно экспериментальных алгоритмов. Попытка использовать его как источник принятой семантики должна завершаться отказом.
 
-## 2. Exact consumer materialization
+## 2. Точная материализация потребителя
 
-`anum_parser` не vendor-ит текущий `anum_docs/ts/src/**` и не зависит от moving `main`.
+`anum_parser` не копирует текущий `anum_docs/ts/src/**` и не зависит от подвижной ветки `main`.
 
-Перед test/check/Pages выполняется:
+Перед тестами, проверками и публикацией выполняется:
 
 ```text
 scripts/materialize-mts-core.mjs
@@ -64,16 +74,18 @@ scripts/materialize-mts-core.mjs
 Материализатор:
 
 1. читает `contracts/mts-core-consumer-lock.json`;
-2. получает ровно указанный upstream commit SHA;
-3. проверяет accepted contract/conformance;
-4. выполняет `npm ci` и build в `anum_docs/ts`;
-5. делает `npm pack`;
-6. сверяет exact SHA256 artifact;
-7. копирует проверенный `dist/src` в gitignored `generated/mts-core/`;
-8. вычисляет digest generated tree;
-9. создаёт generated provenance JSON/ESM module.
+2. получает ровно указанный коммит исходного репозитория;
+3. проверяет принятый контракт и корпус соответствия;
+4. выполняет `npm ci` и сборку в `anum_docs/ts`;
+5. создаёт пакет через `npm pack`;
+6. сверяет точную контрольную сумму SHA256;
+7. копирует проверенный `dist/src` в исключённый из Git каталог `generated/mts-core/`;
+8. вычисляет контрольную сумму сгенерированного дерева;
+9. создаёт сведения о происхождении сгенерированного пакета.
 
-`generated/` — только build product. Semantic authority остаётся upstream accepted package + exact lock.
+`generated/` — только воспроизводимый результат сборки. Источником нормативной семантики остаётся принятый upstream-пакет, связанный с точным consumer lock.
+
+Отдельный verifier дополнительно материализует **два** принятых выпуска — предыдущий v0.10 и текущий v0.11 — чтобы доказать их наблюдаемое соотношение на общей Q-поверхности.
 
 ## 3. Базовое тождество связи
 
@@ -85,25 +97,25 @@ scripts/materialize-mts-core.mjs
 A = C ∧ B = D
 ```
 
-Связь полностью определяется полюсами. Локальный `AsetBuilder.ensureLink(start,end)` поэтому выполняет каноническую materialization операцию:
+Связь полностью определяется полюсами. Локальный `AsetBuilder.ensureLink(start,end)` поэтому выполняет каноническую материализацию:
 
 ```text
 если такая форма уже есть -> вернуть существующую ссылку
 иначе -> добавить presentation record
 ```
 
-Это не делает `AsetBuilder` semantic authority. В accepted path решение **какую пару материализовать** приходит только от `@mts/core`.
+Это не делает `AsetBuilder` источником нормативной семантики. В принятом пути решение **какую пару материализовать** приходит только от `@mts/core`.
 
 Следствия:
 
 - две записи одной формы в `.aset.json` запрещены;
 - повтор ссылки в последовательности не создаёт новый экземпляр связи;
-- повторный `A ⟼ B` может переиспользовать existing presentation record;
+- повторный `A ⟼ B` может переиспользовать существующую запись представления;
 - `R ⟼ R = R`.
 
 ## 4. Корневой базис и четыре абита
 
-Accepted v0.10 сохраняет базис:
+Принятая МТС v0.11 сохраняет базис:
 
 ```text
 R = R ⟼ R
@@ -113,7 +125,7 @@ L = O ⟼ C
 U = C ⟼ O
 ```
 
-Четверичный transport:
+Четверичный транспорт:
 
 ```text
 [ -> O
@@ -122,19 +134,21 @@ U = C ⟼ O
 0 -> U
 ```
 
-Q alphabet остаётся ровно:
+Алфавит Q остаётся ровно:
 
 ```text
 [ ] 1 0
 ```
 
-`R = ∞` не является пятым абитом.
+`R = ∞` не является пятым абитом. Контекстные знаки `.` и `:` также не являются Q-абитами.
 
-## 5. Strict `.anum4` как presentation boundary
+Это важно для v0.11: новый принятый контекстный смысл не расширяет физический `.anum4`-транспорт лаборатории.
 
-Локальный `.anum4` parser намеренно строже upstream raw parser: он принимает только literal `[ ] 1 0` без whitespace/comments.
+## 5. Строгий `.anum4` как граница представления
 
-Это различие классифицировано differential evidence как:
+Локальный `.anum4`-разбор намеренно строже общего входного разбора upstream: он принимает только буквальные `[ ] 1 0` без пробелов и комментариев.
+
+Это различие классифицировано дифференциальным свидетельством как:
 
 ```text
 presentation-boundary-not-semantic-mismatch
@@ -148,9 +162,9 @@ presentation-boundary-not-semantic-mismatch
   -> @mts/core.executeAbits(artifact.symbols, algebra)
 ```
 
-Не следует ослаблять `.anum4` grammar только потому, что upstream `parseRawQuaternary` поддерживает дополнительную raw normalization surface.
+Не следует ослаблять грамматику `.anum4` только потому, что `parseRawQuaternary` поддерживает дополнительную нормализацию исходного текста.
 
-## 6. Два входных транспорта одного accepted runtime
+## 6. Два входных транспорта одного принятого runtime
 
 ### 6.1. Физический `.anum4`
 
@@ -161,7 +175,7 @@ presentation-boundary-not-semantic-mismatch
   -> @mts/core.executeAbits
 ```
 
-### 6.2. Existing carrier
+### 6.2. Существующий носитель
 
 `.aset.json` может быть явно прочитана через:
 
@@ -169,7 +183,7 @@ presentation-boundary-not-semantic-mismatch
 provenance.representations.carrier
 ```
 
-Лаборатория read-only разворачивает start-историю до `R`, получает `O/C/L/U`, восстанавливает `[ ] 1 0` и затем запускает **тот же** accepted runtime.
+Лаборатория только для чтения разворачивает историю начал до `R`, получает `O/C/L/U`, восстанавливает `[ ] 1 0` и затем запускает **тот же** принятый runtime.
 
 ```text
 existing aset
@@ -182,19 +196,19 @@ existing aset
 
 Исходная асеть не изменяется.
 
-Transport provenance использует:
+Сведения транспорта используют:
 
 ```text
 decodedBeforeAcceptedRuntime = true
 ```
 
-а не старое `decodedBeforeStackMachine`.
+а не историческое `decodedBeforeStackMachine`.
 
-## 7. Как строится accepted trace
+## 7. Как строится принятый trace
 
-`@mts/core.executeAbits` возвращает authoritative operation sequence и вызывает `algebra.link(start,end)` для semantic pair construction.
+`@mts/core.executeAbits` возвращает нормативную последовательность операций и вызывает `algebra.link(start,end)` для построения семантических пар.
 
-Локальная instrumented algebra записывает эти события:
+Локальная инструментированная алгебра записывает события:
 
 ```text
 source index
@@ -204,29 +218,29 @@ returned local ref
 created/reused
 ```
 
-После исполнения `projectAcceptedTrace` восстанавливает debugger-friendly frames и проверяет:
+После исполнения `projectAcceptedTrace` восстанавливает удобные для отладчика кадры и проверяет:
 
 ```text
 projected final result == upstream denotation
 ```
 
-Если projection расходится с upstream, accepted execution fail-closed.
+Если проекция расходится с upstream-денотатом, принятый путь завершается отказом.
 
-Следовательно trace — наблюдаемая проекция, а не второй interpreter.
+Следовательно trace — наблюдаемая проекция исполнения, а не второй интерпретатор.
 
-## 8. Experimental algorithms
+## 8. Экспериментальные алгоритмы
 
 Текущие локальные эксперименты:
 
-- `stack-group-value-v0` — historical alternative CLOSE behavior;
-- `abit-flat-v0` — flat fold;
-- `string-flat-v0` — string experiment.
+- `stack-group-value-v0` — исторический альтернативный вариант закрытия группы;
+- `abit-flat-v0` — плоская свёртка;
+- `string-flat-v0` — строковый эксперимент.
 
-Они обязаны иметь `status=experimental` и не получают `semanticAuthority` provenance accepted runtime.
+Они обязаны иметь `status=experimental` и не получают `semanticAuthority` принятого runtime.
 
-Наличие экспериментального алгоритма не изменяет МТС и не означает candidate acceptance.
+Наличие экспериментального алгоритма не изменяет МТС и не создаёт второго принятого пути.
 
-## 9. `.aset.json` как presentation format
+## 9. `.aset.json` как формат представления
 
 Файл хранит:
 
@@ -241,7 +255,7 @@ storedAnums
 provenance
 ```
 
-`links` отображает локально материализованную topology projection. Technical `id` — address внутри файла, а не semantic Link identity.
+`links` отображает локально материализованную топологическую проекцию. Технический `id` — адрес внутри файла, а не дополнительный уровень тождества связи.
 
 Поле:
 
@@ -249,11 +263,11 @@ provenance
 identity = by-poles
 ```
 
-фиксирует canonical equality boundary.
+фиксирует каноническую границу тождества.
 
-## 10. Accepted semantic provenance
+## 10. Происхождение принятой семантики
 
-Accepted result содержит:
+Принятый результат содержит:
 
 ```text
 provenance.status = accepted
@@ -261,7 +275,7 @@ provenance.deserializer = anum-v0.4
 provenance.semanticAuthority.kind = exact-generated-package
 ```
 
-и exact identity:
+и точную идентичность:
 
 ```text
 package
@@ -275,7 +289,7 @@ generatedTreeSha256
 consumerLock
 ```
 
-Это делает machine-visible различие между:
+Таким образом машинно различаются:
 
 ```text
 accepted upstream semantics
@@ -283,18 +297,20 @@ local presentation projection
 experimental local semantics
 ```
 
-## 11. Пошаговый debugger и визуализация
+Для текущего результата `contract/conformance/upstreamCommit/artifactSha256` указывают именно на принятый v0.11 release, даже при сохранённом package version `0.10.0`.
 
-Debugger показывает:
+## 11. Пошаговый отладчик и визуализация
 
-- source position;
-- текущий token;
-- resolved root ref;
-- projected frames/current;
-- produced/reused links;
-- visible links на данном шаге.
+Отладчик показывает:
 
-Новая связь становится видимой только после соответствующего upstream semantic `link(start,end)` event.
+- позицию источника;
+- текущий знак;
+- разрешённую корневую ссылку;
+- проекцию кадров и текущего значения;
+- созданные и переиспользованные связи;
+- видимые связи на данном шаге.
+
+Новая связь становится видимой только после соответствующего нормативного вызова `link(start,end)`.
 
 Визуализация связи `X = A ⟼ B`:
 
@@ -302,9 +318,9 @@ Debugger показывает:
 A -> X -> B
 ```
 
-является UI projection и не меняет semantic identity.
+является проекцией интерфейса и не меняет семантическое тождество.
 
-## 12. READ / materialization boundary
+## 12. Граница READ / материализации
 
 Для лаборатории принципиально:
 
@@ -313,34 +329,42 @@ A -> X -> B
 не найдено != не существует
 ```
 
-Existing-carrier read — read-only operation над входной асетью. Result projection строится отдельно.
+Чтение существующего носителя является операцией только для чтения над входной асетью. Результирующая проекция строится отдельно.
 
-## 13. CI evidence
+## 13. Исполняемое CI-свидетельство
 
 CI имеет две независимые поверхности.
 
-### Runtime/test job
+### Обычная проверка runtime
 
-Перед `node --test` exact runtime materialized из lock. Все обычные tests импортируют accepted deserializer уже через generated `@mts/core`.
+Перед `node --test` текущий принятый runtime материализуется из consumer lock. Обычные тесты импортируют принятый десериализатор через сгенерированный `@mts/core`.
 
-### Consumer/differential job
+### Проверка потребителя и дифференциальное свидетельство
 
-Отдельно:
+Отдельный verifier выполняет:
 
 ```text
-exact source rebuild
-npm pack
-artifact SHA256
-package-root smoke
-deep-import rejection
-local baseline vs accepted v0.10 differential
+previous exact source = v0.10 / 957c818d...
+current exact source  = v0.11 / 6b7f616c...
+rebuild both
+npm pack both
+verify both artifact SHA256
+consume through package root
+reject deep source import
+compare shared Q corpus
+compare shared Q failure classes
+verify accepted v0.11 contract/conformance obligations
 ```
 
-Differential evidence покрывает все accepted `.anum4` cases из `examples/cases.json` и stack failure classes.
+Общий Q-корпус содержит 33 принятых случая из `examples/cases.json`. Для них предыдущий v0.10, текущий v0.11 и локальная проекция текущего runtime должны давать одинаковый наблюдаемый денотат.
+
+Отдельно сравниваются общие классы ошибок четверичного исполнения. Строгость локального `.anum4` остаётся классифицированной границей представления, а не семантическим расхождением.
+
+V0.11-специфические контекстные обязательства не подменяются Q-дифференциалом: verifier отдельно требует их из принятого upstream-контракта и корпуса соответствия.
 
 ## 14. GitHub Pages
 
-Pages workflow также materializes exact runtime перед публикацией и копирует в `_site`:
+Процесс публикации также материализует текущий точно зафиксированный runtime перед сборкой и копирует в `_site`:
 
 ```text
 src/
@@ -350,43 +374,52 @@ generated/
 package.json
 ```
 
-Таким образом browser site и CI используют один и тот же consumer lock.
+Таким образом браузерный сайт, обычный CI и consumer verifier используют одну и ту же текущую фиксацию v0.11. Предыдущая v0.10 материализуется только внутри дифференциальной проверки как неизменяемое свидетельство.
 
-## 15. Граница с MTS v0.11
+## 15. Принятая граница МТС v0.11
 
-На текущем observed upstream v0.11 остаётся:
-
-```text
-status = candidate
-accepted = false
-acceptanceReady = false
-candidateRuntimeSelectable = false
-```
-
-Поэтому `anum_parser` не должен:
-
-- переключать production на moving `anum_docs/main`;
-- локально реализовывать новый accepted-like interpreter для `TopBind(R,S)`;
-- объявлять top-level `.` принятой current semantics;
-- расширять Q;
-- выдавать candidate research/runtime evidence за accepted release.
-
-Пока candidate не accepted, правильная consumer стратегия — ждать upstream lifecycle.
-
-После acceptance требуется отдельный explicit transition:
+В upstream v0.11 принята как текущий выпуск:
 
 ```text
-new exact source SHA
-new accepted contract/conformance
-new package version/artifact digest
-new consumer lock
-new differential proof
-new runtime/Pages evidence
+status = accepted
+accepted = true
+acceptanceReady = true
+coverageState = complete
+acceptanceBlockers = []
 ```
+
+Её наблюдаемое изменение включает:
+
+```text
+TopBind(R,S)
+top-level . -> R
+.. -> ExactSequence([R,R]) -> Pair(R,R)=R
+nearest structural A:E binding
+Q alphabet = [ ] 1 0
+```
+
+Архитектурное следствие для `anum_parser` состоит не в добавлении второй контекстной машины. Лаборатория:
+
+- переключает нормативное происхождение на точный принятый v0.11 artifact;
+- сохраняет текущий `.anum4` как Q-путь `[ ] 1 0`;
+- не вводит `.` или `:` в Q;
+- не реализует локально `TopBind(R,S)` или вложенную `A:E`-привязку;
+- проверяет эти принятые свойства по upstream contract/conformance evidence;
+- доказывает наблюдаемую совместимость общей Q-поверхности с предыдущим точным v0.10 runtime.
+
+Поэтому принятие v0.11 не размывает границу ответственности потребителя: новая семантика принадлежит `anum_docs`, а `anum_parser` только точно фиксирует и проверяет принятую зависимость.
 
 ## 16. Граница с `anum_docs`
 
-`anum_docs` владеет MTS contracts, accepted runtime и release lifecycle.
+`anum_docs` владеет:
+
+```text
+MTS contracts
+accepted runtime
+release lifecycle
+contextual semantics
+conformance evidence
+```
 
 `anum_parser` владеет:
 
@@ -397,10 +430,23 @@ presentation Aset format
 trace/debugger/visualizer
 experimental comparisons
 consumer verification
+differential previous/current evidence
 ```
 
-Главный архитектурный результат синхронизации:
+Главный архитектурный инвариант после v0.11 repin:
 
 ```text
-anum_parser no longer defines current MTS semantics locally
+anum_parser does not define current MTS semantics locally
+```
+
+А переход между принятыми выпусками всегда остаётся явной операцией:
+
+```text
+exact upstream SHA
+accepted contract/conformance
+exact artifact SHA256
+consumer lock
+previous/current differential proof
+runtime/browser evidence
+canonical docs
 ```
