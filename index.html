@@ -75,6 +75,24 @@
           <span class="legend"><i class="start-line"></i> начало &nbsp; <i class="end-line"></i> конец</span>
           <span class="hint">2D — структурная глубина · 3D — пружины и одноимённые GREEN-заряды</span>
         </div>
+        <div id="graphPhysicsControls" class="graph-physics-controls" aria-label="Параметры живой 3D-механики" hidden>
+          <label class="physics-range" for="graphCharge">
+            <span>Заряд узлов <output id="graphChargeValue" for="graphCharge">1.00</output></span>
+            <input id="graphCharge" type="range" min="0" max="3" step="0.05" value="1">
+          </label>
+          <label class="physics-range" for="graphSpringStiffness">
+            <span>Жёсткость пружин <output id="graphSpringStiffnessValue" for="graphSpringStiffness">0.055</output></span>
+            <input id="graphSpringStiffness" type="range" min="0" max="0.2" step="0.005" value="0.055">
+          </label>
+          <label class="physics-range" for="graphDamping">
+            <span>Затухание <output id="graphDampingValue" for="graphDamping">0.86</output></span>
+            <input id="graphDamping" type="range" min="0.5" max="0.99" step="0.01" value="0.86">
+          </label>
+          <div class="physics-actions">
+            <button id="graphPhysicsPause" type="button">Пауза</button>
+            <button id="graphPhysicsReset" type="button">Сбросить механику</button>
+          </div>
+        </div>
         <div id="graph" role="application" aria-label="Интерактивная визуализация асети"></div>
       </section>
     </section>
