@@ -8,6 +8,7 @@ import {
   destroy3dRenderer,
   fit3dRenderer,
   reset3dLivePhysics,
+  resize3dRenderer,
   set3dDebugState,
   set3dLivePhysicsOptions,
   set3dLivePhysicsPaused,
@@ -42,12 +43,14 @@ const state = {
     damping: DEFAULT_PHYSICS3D_OPTIONS.damping,
   },
   physicsPaused: false,
+  fullscreenFallback: false,
 };
 const ids = [
   "inputFormat", "sample", "source", "algorithm", "compareAlgorithm", "createStorage",
   "run", "load", "file", "serializer", "save", "status", "summary", "symbols",
   "abits", "linkSequence", "rootChains", "storedAnums", "trace", "comparison",
-  "asetJson", "graph", "graphView", "graphLayout", "graphFit", "graphZoomIn", "graphZoomOut", "appVersion",
+  "asetJson", "graphPanel", "graph", "graphView", "graphLayout", "graphFit", "graphFullscreen",
+  "graphZoomIn", "graphZoomOut", "appVersion",
   "graphPhysicsControls", "graphCharge", "graphChargeValue", "graphSpringStiffness",
   "graphSpringStiffnessValue", "graphDamping", "graphDampingValue", "graphPhysicsPause",
   "graphPhysicsReset",
@@ -82,11 +85,12 @@ async function boot() {
   ui.load.addEventListener("click", () => ui.file.click());
   ui.file.addEventListener("change", loadFile);
   ui.save.addEventListener("click", saveOutput);
-  ui.graphView.addEventListener("change", changeGraphView);
+  ui.graphView.addEventListener("change", () => { void changeGraphView().catch(showError); });
   ui.graphLayout.addEventListener("change", () => {
     if (state.graphView === "2d") changeGraphLayout(ui.graph, ui.graphLayout.value);
   });
   ui.graphFit.addEventListener("click", fitCurrentGraph);
+  ui.graphFullscreen.addEventListener("click", () => { void toggleGraphFullscreen().catch(showError); });
   ui.graphZoomIn.addEventListener("click", () => zoomCurrentGraph(1.28));
   ui.graphZoomOut.addEventListener("click", () => zoomCurrentGraph(1 / 1.28));
   ui.graphCharge.addEventListener("input", () => changePhysicsOption("charge", ui.graphCharge));
@@ -99,6 +103,8 @@ async function boot() {
   ui.debugNext.addEventListener("click", () => setDebugStep(state.debugStep + 1));
   ui.debugLast.addEventListener("click", () => setDebugStep(lastDebugStep()));
   ui.debugRange.addEventListener("input", () => setDebugStep(Number(ui.debugRange.value)));
+  document.addEventListener("fullscreenchange", handleFullscreenChange);
+  document.addEventListener("keydown", handleFullscreenEscape);
   renderPhysicsControls();
   selectSample();
   run();
@@ -213,9 +219,11 @@ function render() {
   refreshSerializers();
 }
 
-function changeGraphView() {
+async function changeGraphView() {
   clearStatus();
-  state.graphView = ui.graphView.value === "3d" ? "3d" : "2d";
+  const nextView = ui.graphView.value === "3d" ? "3d" : "2d";
+  if (nextView !== "3d" && graphIsFullscreen()) await exitGraphFullscreen();
+  state.graphView = nextView;
   renderGraph();
   renderDebugger();
   if (state.graphWarning) showStatus(state.graphWarning, "error");
@@ -250,6 +258,7 @@ function renderGraph() {
       console.warn("3D renderer unavailable; falling back to structural 2D", error);
       destroy3dRenderer(ui.graph);
       state.graphView = "2d";
+      if (graphIsFullscreen()) void exitGraphFullscreen();
       state.graphWarning = `3D недоступен: ${error?.message ?? error}. Включён структурный 2D.`;
       renderAset(ui.graph, aset, {
         layout: ui.graphLayout.value,
@@ -276,6 +285,7 @@ function updateGraphControls() {
   ui.graphPhysicsControls.hidden = !is3d;
   ui.graph.dataset.viewMode = state.graphView;
   renderPhysicsControls();
+  renderFullscreenControl();
 }
 
 function renderPhysicsControls() {
@@ -313,6 +323,91 @@ function resetCurrentPhysics() {
   if (state.graphView !== "3d") return;
   reset3dLivePhysics(ui.graph);
   renderPhysicsControls();
+}
+
+function graphIsFullscreen() {
+  return document.fullscreenElement === ui.graphPanel || state.fullscreenFallback;
+}
+
+function schedule3dResize() {
+  if (state.graphView !== "3d") return;
+  const resize = () => resize3dRenderer(ui.graph);
+  if (typeof globalThis.requestAnimationFrame === "function") {
+    globalThis.requestAnimationFrame(resize);
+  } else {
+    globalThis.setTimeout(resize, 0);
+  }
+}
+
+function applyFullscreenFallback(active) {
+  state.fullscreenFallback = Boolean(active);
+  ui.graphPanel.classList.toggle("graph-fullscreen-fallback", state.fullscreenFallback);
+  document.body.classList.toggle("graph-fullscreen-active", state.fullscreenFallback);
+}
+
+function renderFullscreenControl() {
+  const active3d = state.graphView === "3d";
+  const fullscreen = graphIsFullscreen();
+  ui.graphFullscreen.hidden = !active3d;
+  ui.graphFullscreen.disabled = !active3d;
+  ui.graphFullscreen.textContent = fullscreen ? "Выйти из полноэкранного" : "На весь экран";
+  ui.graphFullscreen.setAttribute("aria-pressed", String(fullscreen));
+  ui.graphFullscreen.title = fullscreen
+    ? "Вернуть 3D в страницу"
+    : "Развернуть 3D на весь экран браузера";
+}
+
+async function enterGraphFullscreen() {
+  if (state.graphView !== "3d" || graphIsFullscreen()) return false;
+  const request = ui.graphPanel.requestFullscreen;
+  if (typeof request === "function") {
+    try {
+      await request.call(ui.graphPanel);
+      renderFullscreenControl();
+      schedule3dResize();
+      return true;
+    } catch (error) {
+      console.warn("Native fullscreen unavailable; using viewport fallback", error);
+    }
+  }
+  applyFullscreenFallback(true);
+  renderFullscreenControl();
+  schedule3dResize();
+  return true;
+}
+
+async function exitGraphFullscreen() {
+  if (document.fullscreenElement === ui.graphPanel && typeof document.exitFullscreen === "function") {
+    try {
+      await document.exitFullscreen();
+    } catch (error) {
+      console.warn("Failed to exit native fullscreen", error);
+    }
+  }
+  if (state.fullscreenFallback) applyFullscreenFallback(false);
+  renderFullscreenControl();
+  schedule3dResize();
+  return true;
+}
+
+async function toggleGraphFullscreen() {
+  if (state.graphView !== "3d") return;
+  if (graphIsFullscreen()) await exitGraphFullscreen();
+  else await enterGraphFullscreen();
+}
+
+function handleFullscreenChange() {
+  if (document.fullscreenElement === ui.graphPanel && state.fullscreenFallback) {
+    applyFullscreenFallback(false);
+  }
+  renderFullscreenControl();
+  schedule3dResize();
+}
+
+function handleFullscreenEscape(event) {
+  if (event.key !== "Escape" || !state.fullscreenFallback) return;
+  event.preventDefault();
+  void exitGraphFullscreen();
 }
 
 function fitCurrentGraph() {

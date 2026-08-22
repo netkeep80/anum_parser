@@ -217,3 +217,40 @@ footer > span:first-child { margin-right: auto; }
   .physics-actions { grid-column: auto; display: grid; grid-template-columns: 1fr 1fr; }
   .machine-workspace #graph, #graph { height: 520px; min-height: 420px; }
 }
+
+body.graph-fullscreen-active { overflow: hidden; }
+.graph-panel:fullscreen,
+.graph-panel.graph-fullscreen-fallback {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  margin: 0;
+  padding: 12px;
+  border-radius: 0;
+  background: var(--panel);
+  overflow: hidden;
+}
+.graph-panel.graph-fullscreen-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+.graph-panel:fullscreen #graph,
+.graph-panel.graph-fullscreen-fallback #graph,
+.machine-workspace .graph-panel:fullscreen #graph,
+.machine-workspace .graph-panel.graph-fullscreen-fallback #graph {
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+}
+.graph-panel:fullscreen .graph-heading,
+.graph-panel.graph-fullscreen-fallback .graph-heading {
+  flex: 0 0 auto;
+}
+.graph-panel:fullscreen .graph-meta,
+.graph-panel.graph-fullscreen-fallback .graph-meta,
+.graph-panel:fullscreen .graph-physics-controls,
+.graph-panel.graph-fullscreen-fallback .graph-physics-controls {
+  flex: 0 0 auto;
+}
