@@ -551,12 +551,22 @@ function pickLinkId(state, event) {
   return resolvePickedLinkId3d(state.raycaster.intersectObjects(candidates, false));
 }
 
+function applyPickedLink(state, event) {
+  const selected = pickLinkId(state, event);
+  state.selectedLinkId = selected;
+  applyThreePresentationState(state);
+  state.options.onSelectLink?.(selected);
+  return selected;
+}
+
 function configurePicking(state) {
   const canvas = state.renderer.domElement;
   const onPointerDown = (event) => {
+    if (event.pointerType === "touch") return;
     state.pointerDown = { x: event.clientX, y: event.clientY };
   };
   const onPointerMove = (event) => {
+    if (event.pointerType === "touch") return;
     const next = pickLinkId(state, event);
     if (next === state.hoveredLinkId) return;
     state.hoveredLinkId = next;
@@ -569,22 +579,44 @@ function configurePicking(state) {
     applyThreePresentationState(state);
   };
   const onPointerUp = (event) => {
+    if (event.pointerType === "touch") return;
     const down = state.pointerDown;
     state.pointerDown = null;
     if (!down) return;
     const distance = Math.hypot(event.clientX - down.x, event.clientY - down.y);
     if (distance > POINTER_TAP_DISTANCE) return;
-    const selected = pickLinkId(state, event);
-    state.selectedLinkId = selected;
-    applyThreePresentationState(state);
-    state.options.onSelectLink?.(selected);
+    applyPickedLink(state, event);
+  };
+  const onTouchStart = (event) => {
+    if (event.touches.length !== 1) {
+      state.touchDown = null;
+      return;
+    }
+    const touch = event.touches[0];
+    state.touchDown = { x: touch.clientX, y: touch.clientY };
+  };
+  const onTouchEnd = (event) => {
+    const down = state.touchDown;
+    state.touchDown = null;
+    const touch = event.changedTouches[0];
+    if (!down || !touch) return;
+    const distance = Math.hypot(touch.clientX - down.x, touch.clientY - down.y);
+    if (distance > POINTER_TAP_DISTANCE) return;
+    applyPickedLink(state, touch);
+  };
+  const onTouchCancel = () => {
+    state.touchDown = null;
   };
 
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerleave", onPointerLeave);
   canvas.addEventListener("pointerup", onPointerUp);
+  canvas.addEventListener("touchstart", onTouchStart, { passive: true });
+  canvas.addEventListener("touchend", onTouchEnd, { passive: true });
+  canvas.addEventListener("touchcancel", onTouchCancel, { passive: true });
   state.pointerListeners = { onPointerDown, onPointerMove, onPointerLeave, onPointerUp };
+  state.touchListeners = { onTouchStart, onTouchEnd, onTouchCancel };
 }
 
 export function resize3dRenderer(container) {
@@ -757,7 +789,9 @@ export function create3dRenderer(container, visualModel, physicalState, options 
     raycaster: new THREE.Raycaster(),
     pointer: new THREE.Vector2(),
     pointerListeners: null,
+    touchListeners: null,
     pointerDown: null,
+    touchDown: null,
     debugState: options.debugState ?? null,
     selectedLinkId: options.selectedLinkId ?? null,
     hoveredLinkId: null,
@@ -799,6 +833,11 @@ export function destroy3dRenderer(container) {
     canvas.removeEventListener("pointermove", state.pointerListeners.onPointerMove);
     canvas.removeEventListener("pointerleave", state.pointerListeners.onPointerLeave);
     canvas.removeEventListener("pointerup", state.pointerListeners.onPointerUp);
+  }
+  if (state.touchListeners) {
+    canvas.removeEventListener("touchstart", state.touchListeners.onTouchStart);
+    canvas.removeEventListener("touchend", state.touchListeners.onTouchEnd);
+    canvas.removeEventListener("touchcancel", state.touchListeners.onTouchCancel);
   }
 
   state.scene.traverse(disposeObject);
