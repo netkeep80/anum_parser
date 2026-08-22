@@ -12,6 +12,10 @@ import {
   cytoscapeGraphStyle,
   visualModelToCytoscapeElements,
 } from "../src/cytoscape-adapter.js";
+import {
+  asetToGraphElements,
+  graphElementsForRendering,
+} from "../src/visualizer.js";
 
 function fixture() {
   return {
@@ -93,6 +97,20 @@ test("legacy Cytoscape facade сохраняет прежнюю link -> pole п�
 
   assert.deepEqual([start.data.source, start.data.target], ["X", "A"]);
   assert.deepEqual([end.data.source, end.data.target], ["X", "B"]);
+});
+
+test("public visualizer facade использует shared visual model без semantic fork", () => {
+  const aset = fixture();
+  const model = buildVisualModel(aset);
+
+  assert.deepEqual(
+    graphElementsForRendering(aset),
+    visualModelToCytoscapeElements(model),
+  );
+  assert.deepEqual(
+    asetToGraphElements(aset),
+    visualModelToCytoscapeElements(model, { legacyPoleOrientation: true }),
+  );
 });
 
 test("renderer-neutral debugger state не мутирует semantic model", () => {
