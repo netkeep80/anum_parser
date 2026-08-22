@@ -5,12 +5,20 @@ import {
 } from "./layout-postprocessor.js";
 import { buildRootedStructuralLayout } from "./rooted-layout.js";
 import { minimizeRootedArcCrossings } from "./rooted-crossing.js";
+import {
+  END_LOOP_SWEEP_DEG,
+  START_LOOP_SWEEP_DEG,
+  cytoscapeGraphStyle,
+  visualModelToCytoscapeElements,
+} from "./cytoscape-adapter.js";
+import {
+  buildVisualModel,
+  normalizeVisualDebugState,
+} from "./visual-model.js";
 
 const graphStates = new WeakMap();
 const ARC_TANGENT_LENGTH = 26;
 const GEOMETRY_EPSILON = 1e-9;
-const START_LOOP_SWEEP_DEG = -65;
-const END_LOOP_SWEEP_DEG = 65;
 const SELF_LOOP_NODE_RADIUS = 24;
 const SELF_LOOP_CONTROL_RADIUS = 54;
 
@@ -24,73 +32,18 @@ export const GRAPH_LAYOUTS = Object.freeze([
   { id: "concentric", title: "Концентрическая" },
 ]);
 
+// Compatibility facade: прежняя базовая Cytoscape-проекция link -> pole
+// теперь получается из renderer-independent visual model.
 export function asetToGraphElements(aset, limit = 300) {
-  if (!aset?.links?.length) return [];
-  const links = aset.links.slice(0, limit);
-  const visible = new Set(links.map((link) => link.id));
-  const elements = [];
-
-  for (const link of links) {
-    const semanticLabel = aset.labels?.[link.id];
-    const label = semanticLabel && semanticLabel !== link.id
-      ? `${link.id}\n${semanticLabel}`
-      : link.id;
-    elements.push({
-      data: {
-        id: link.id,
-        label,
-        linkId: link.id,
-        start: link.start,
-        end: link.end,
-        root: link.id === aset.root ? "yes" : "no",
-      },
-    });
-  }
-
-  for (const link of links) {
-    if (visible.has(link.start)) {
-      elements.push({
-        data: {
-          id: `pole-start:${link.id}`,
-          source: link.id,
-          target: link.start,
-          linkId: link.id,
-          role: "start",
-          label: "начало",
-        },
-      });
-    }
-    if (visible.has(link.end)) {
-      elements.push({
-        data: {
-          id: `pole-end:${link.id}`,
-          source: link.id,
-          target: link.end,
-          linkId: link.id,
-          role: "end",
-          label: "конец",
-        },
-      });
-    }
-  }
-  return elements;
+  return visualModelToCytoscapeElements(
+    buildVisualModel(aset, limit),
+    { legacyPoleOrientation: true },
+  );
 }
 
-// В базовой проекции обе роли хранятся как link -> pole. Для визуального языка МТС
-// start должен входить в центральный узел связи: startPole -> link,
-// а end — выходить из него: link -> endPole.
+// Семантическая renderer-проекция: startPole -> link -> endPole.
 export function graphElementsForRendering(aset, limit = 300) {
-  return asetToGraphElements(aset, limit).map((element) => {
-    if (element.data?.role !== "start") return element;
-    return {
-      ...element,
-      data: {
-        ...element.data,
-        source: element.data.target,
-        target: element.data.source,
-      },
-    };
-  });
+  return visualModelToCytoscapeElements(buildVisualModel(aset, limit));
 }
 
 // Две GREEN-касательные одной связи в её центре всегда антипараллельны.
@@ -335,7 +288,8 @@ export function renderAset(container, aset, options = {}) {
   const cytoscape = requireCytoscape();
   const layoutId = options.layout ?? container.dataset.layout ?? ROOTED_LAYOUT_ID;
   container.dataset.layout = layoutId;
-  const elements = graphElementsForRendering(aset);
+  const visualModel = buildVisualModel(aset);
+  const elements = visualModelToCytoscapeElements(visualModel);
   const cy = cytoscape({
     container,
     elements,
@@ -397,7 +351,7 @@ export function renderAset(container, aset, options = {}) {
 
   const resizeObserver = new ResizeObserver(() => cy.resize());
   resizeObserver.observe(container);
-  graphStates.set(container, { cy, resizeObserver, aset });
+  graphStates.set(container, { cy, resizeObserver, aset, visualModel });
 }
 
 export function changeGraphLayout(container, layoutId) {
@@ -425,13 +379,12 @@ export function setGraphDebugState(container, debugState) {
   const state = graphStates.get(container);
   if (!state) return;
 
-  const { cy, aset } = state;
-  const visible = debugState
-    ? new Set(debugState.visibleLinkIds ?? [])
-    : new Set(aset.links.map((link) => link.id));
-  const produced = new Set(debugState?.producedLinks ?? []);
-  const reused = new Set(debugState?.reusedLinks ?? []);
-  const current = debugState?.current ?? null;
+  const { cy, visualModel } = state;
+  const normalized = normalizeVisualDebugState(visualModel, debugState);
+  const visible = new Set(normalized.visibleLinkIds);
+  const produced = new Set(normalized.producedLinks);
+  const reused = new Set(normalized.reusedLinks);
+  const current = normalized.current;
 
   cy.batch(() => {
     cy.nodes().forEach((node) => {
@@ -699,158 +652,5 @@ function layoutOptions(layoutId) {
 }
 
 export function graphStyle() {
-  return [
-    {
-      selector: "node",
-      style: {
-        label: "data(label)",
-        "text-valign": "center",
-        "text-halign": "center",
-        "text-wrap": "wrap",
-        "font-family": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-        "font-size": "10px",
-        color: "#f4f7ff",
-        "text-outline-color": "#111a2f",
-        "text-outline-width": 2,
-        "background-color": "#174238",
-        "border-color": "#67e8b3",
-        "border-width": 1.5,
-        width: 44,
-        height: 44,
-      },
-    },
-    {
-      selector: 'node[root = "yes"]',
-      style: {
-        "background-color": "#174238",
-        "border-color": "#67e8b3",
-        "border-width": 3,
-        width: 54,
-        height: 54,
-        "font-size": "11px",
-        "font-weight": "bold",
-      },
-    },
-    {
-      selector: "node:selected",
-      style: {
-        "border-color": "#ffd47a",
-        "border-width": 4,
-      },
-    },
-    {
-      selector: "edge",
-      style: {
-        width: 2,
-        "curve-style": "unbundled-bezier",
-        "source-arrow-shape": "none",
-        "target-arrow-shape": "none",
-        "arrow-scale": 0.92,
-        label: "data(label)",
-        "font-family": "Inter, system-ui, sans-serif",
-        "font-size": "8px",
-        color: "#8ea2c8",
-        "text-background-color": "#08101d",
-        "text-background-opacity": 0.82,
-        "text-background-padding": "2px",
-        "text-rotation": "autorotate",
-        "line-cap": "round",
-      },
-    },
-    {
-      selector: 'edge[role = "start"]',
-      style: {
-        label: "",
-        "curve-style": "unbundled-bezier",
-        "control-point-distances": -34,
-        "control-point-weights": 0.5,
-        "loop-direction": "-90deg",
-        "loop-sweep": `${START_LOOP_SWEEP_DEG}deg`,
-        "line-fill": "linear-gradient",
-        "line-gradient-stop-colors": "#ff657a #67e8b3",
-        "line-gradient-stop-positions": "0% 100%",
-        "line-color": "#67e8b3",
-        "source-arrow-shape": "none",
-        "target-arrow-shape": "none",
-        "source-label": "×",
-        "source-text-offset": 8,
-        "source-text-rotation": "none",
-        "font-size": "16px",
-        "font-weight": "bold",
-        color: "#ff657a",
-        "text-background-opacity": 0,
-      },
-    },
-    {
-      selector: 'edge[role = "end"]',
-      style: {
-        label: "",
-        "curve-style": "unbundled-bezier",
-        "control-point-distances": 34,
-        "control-point-weights": 0.5,
-        "loop-direction": "90deg",
-        "loop-sweep": `${END_LOOP_SWEEP_DEG}deg`,
-        "line-fill": "linear-gradient",
-        "line-gradient-stop-colors": "#67e8b3 #73a7ff",
-        "line-gradient-stop-positions": "0% 100%",
-        "line-color": "#67e8b3",
-        "source-arrow-shape": "none",
-        "target-arrow-shape": "triangle",
-        "target-arrow-color": "#73a7ff",
-        "target-arrow-fill": "filled",
-      },
-    },
-    {
-      selector: "node.debug-hidden",
-      style: { display: "none" },
-    },
-    {
-      selector: "edge.debug-hidden",
-      style: { display: "none" },
-    },
-    {
-      selector: "node.debug-produced",
-      style: {
-        "background-color": "#174238",
-        "border-color": "#67e8b3",
-        "border-width": 4,
-      },
-    },
-    {
-      selector: "edge.debug-produced",
-      style: {
-        width: 4,
-      },
-    },
-    {
-      selector: "node.debug-reused",
-      style: {
-        "border-color": "#6bdcff",
-        "border-style": "dashed",
-        "border-width": 4,
-      },
-    },
-    {
-      selector: "edge.debug-reused",
-      style: {
-        "line-style": "dashed",
-        width: 4,
-      },
-    },
-    {
-      selector: "node.debug-current",
-      style: {
-        "border-color": "#ffd47a",
-        "border-style": "solid",
-        "border-width": 5,
-      },
-    },
-    {
-      selector: "edge:selected",
-      style: {
-        width: 3.5,
-        color: "#eef3ff",
-      },
-    },
-  ];
+  return cytoscapeGraphStyle();
 }
