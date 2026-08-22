@@ -309,9 +309,24 @@ export function auditReadability3d(positions, sceneData = null, options = {}) {
 
 function centerSeparationPass(positions, rootId, normalized) {
   const ids = stableIds(positions);
-  const corrections = Object.fromEntries(ids.map((id) => [id, cloneVec3(ZERO)]));
+  const passStart = clonePositions(positions);
+  const next = clonePositions(positions);
+  if (rootId != null && rootId in next) next[rootId] = cloneVec3(ZERO);
   let violations = 0;
   let evaluations = 0;
+
+  const moveWithinPassBudget = (id, delta) => {
+    if (id === rootId) return;
+    const candidate = addVec3(next[id], delta);
+    const displacement = subtractVec3(candidate, passStart[id]);
+    const magnitude = normVec3(displacement);
+    next[id] = magnitude > normalized.maxCorrectionPerPass && magnitude > EPSILON
+      ? addVec3(
+        passStart[id],
+        scaleVec3(displacement, normalized.maxCorrectionPerPass / magnitude),
+      )
+      : candidate;
+  };
 
   outer:
   for (let left = 0; left < ids.length; left += 1) {
@@ -320,7 +335,7 @@ function centerSeparationPass(positions, rootId, normalized) {
       evaluations += 1;
       const leftId = ids[left];
       const rightId = ids[right];
-      const pair = normalizedDirection(leftId, rightId, positions[leftId], positions[rightId]);
+      const pair = normalizedDirection(leftId, rightId, next[leftId], next[rightId]);
       if (pair.distance >= normalized.minimumCenterDistance) continue;
       violations += 1;
       const deficit = normalized.minimumCenterDistance - pair.distance;
@@ -332,30 +347,17 @@ function centerSeparationPass(positions, rootId, normalized) {
       const rightFixed = rightId === rootId;
       if (leftFixed && rightFixed) continue;
       if (leftFixed) {
-        corrections[rightId] = addVec3(corrections[rightId], scaleVec3(pair.direction, correction));
+        moveWithinPassBudget(rightId, scaleVec3(pair.direction, correction));
       } else if (rightFixed) {
-        corrections[leftId] = addVec3(corrections[leftId], scaleVec3(pair.direction, -correction));
+        moveWithinPassBudget(leftId, scaleVec3(pair.direction, -correction));
       } else {
         const half = correction / 2;
-        corrections[leftId] = addVec3(corrections[leftId], scaleVec3(pair.direction, -half));
-        corrections[rightId] = addVec3(corrections[rightId], scaleVec3(pair.direction, half));
+        moveWithinPassBudget(leftId, scaleVec3(pair.direction, -half));
+        moveWithinPassBudget(rightId, scaleVec3(pair.direction, half));
       }
     }
   }
 
-  const next = clonePositions(positions);
-  for (const id of ids) {
-    if (id === rootId) {
-      next[id] = cloneVec3(ZERO);
-      continue;
-    }
-    let correction = corrections[id];
-    const magnitude = normVec3(correction);
-    if (magnitude > normalized.maxCorrectionPerPass && magnitude > EPSILON) {
-      correction = scaleVec3(correction, normalized.maxCorrectionPerPass / magnitude);
-    }
-    next[id] = addVec3(next[id], correction);
-  }
   if (rootId != null && rootId in next) next[rootId] = cloneVec3(ZERO);
   return { positions: next, violations, evaluations };
 }
