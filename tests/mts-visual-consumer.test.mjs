@@ -8,7 +8,11 @@ import {
 } from "../generated/mts-visual/index.js";
 import { projectAsetToVisualLinkNetwork } from "../src/mts-visual-adapter.js";
 
-const EXPECTED_VISUAL_COMMIT = "aca8984ba94b4ecd33de3a003a4bba3eb5fce56f";
+const EXPECTED_VISUAL_REPOSITORY = "netkeep80/mts_visual";
+const EXPECTED_VISUAL_COMMIT = "6722702cb4bb6948e890135c85bc9d778c8cd571";
+const EXPECTED_VISUAL_ROOT = ".";
+const EXPECTED_VISUAL_MANIFEST_BLOB = "b9285f256696f9c5259909ae993e13815be9677d";
+const EXPECTED_VISUAL_LOCKFILE_BLOB = "dd1800f7a9db83e9555a98268b383871c5f8bbf7";
 const EXPECTED_CORE_COMMIT = "6b7f616c7b275310aebdbe998da13c5811c91391";
 
 function kernelAset(extraLinks = [], labels = {}, extra = {}) {
@@ -43,21 +47,27 @@ function topology(network) {
   }));
 }
 
-test("visual presentation dependency is exact and independent from semantic core", () => {
+test("visual presentation dependency is exact standalone and independent from semantic core", () => {
   const visualLock = JSON.parse(readFileSync("contracts/mts-visual-consumer-lock.json", "utf8"));
   const coreLock = JSON.parse(readFileSync("contracts/mts-core-consumer-lock.json", "utf8"));
   const provenance = JSON.parse(readFileSync("generated/mts-visual-provenance.json", "utf8"));
 
   assert.equal(visualLock.schema, "anum-parser-mts-visual-consumer-lock/v0.1");
   assert.equal(visualLock.channel, "accepted-presentation");
-  assert.equal(visualLock.repository, "netkeep80/anum_docs");
+  assert.equal(visualLock.repository, EXPECTED_VISUAL_REPOSITORY);
   assert.equal(visualLock.commit, EXPECTED_VISUAL_COMMIT);
   assert.equal(visualLock.package.name, "@mts/visual");
   assert.equal(visualLock.package.version, "0.1.0");
-  assert.equal(visualLock.package.root, "packages/visual");
+  assert.equal(visualLock.package.root, EXPECTED_VISUAL_ROOT);
+  assert.equal(visualLock.package.manifest.path, "package.json");
+  assert.equal(visualLock.package.manifest.gitBlobSha, EXPECTED_VISUAL_MANIFEST_BLOB);
+  assert.equal(visualLock.package.lockfile.path, "package-lock.json");
+  assert.equal(visualLock.package.lockfile.gitBlobSha, EXPECTED_VISUAL_LOCKFILE_BLOB);
   assert.equal(visualLock.package.dependencies.three, "0.185.1");
   assert.equal(visualLock.authority.floatingRefAllowed, false);
   assert.equal(visualLock.authority.deepSourceImportAllowed, false);
+  assert.equal(visualLock.authority.semanticAcceptanceClaimed, false);
+  assert.equal(visualLock.authority.semanticCoreLockIndependent, true);
 
   assert.equal(coreLock.schema, "anum-parser-mts-core-consumer-lock/v0.1");
   assert.equal(coreLock.commit, EXPECTED_CORE_COMMIT);
@@ -68,6 +78,8 @@ test("visual presentation dependency is exact and independent from semantic core
   assert.equal(provenance.commit, visualLock.commit);
   assert.equal(provenance.package, visualLock.package.name);
   assert.equal(provenance.packageVersion, visualLock.package.version);
+  assert.equal(provenance.manifestGitBlobSha, EXPECTED_VISUAL_MANIFEST_BLOB);
+  assert.equal(provenance.lockfileGitBlobSha, EXPECTED_VISUAL_LOCKFILE_BLOB);
   assert.match(provenance.treeSha256, /^[0-9a-f]{64}$/);
 });
 
