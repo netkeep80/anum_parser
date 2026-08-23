@@ -140,9 +140,10 @@ async function publicHaloPoint(page, key) {
   expect(applied).toBe(true);
 
   const canvas = page.locator("#graph > canvas");
-  const png = await canvas.screenshot();
-  const box = await canvas.boundingBox();
-  if (!box) return null;
+  await canvas.scrollIntoViewIfNeeded();
+  const viewport = page.viewportSize();
+  if (!viewport) return null;
+  const png = await page.screenshot();
   const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
   const relative = await page.evaluate(async (url) => {
     const image = new Image();
@@ -180,7 +181,7 @@ async function publicHaloPoint(page, key) {
       y: ((minY + maxY) / 2) / scratch.height,
     };
   }, dataUrl);
-  return relative ? { x: box.x + relative.x * box.width, y: box.y + relative.y * box.height } : null;
+  return relative ? { x: relative.x * viewport.width, y: relative.y * viewport.height } : null;
 }
 
 async function forceCssFullscreenFallback(page) {
