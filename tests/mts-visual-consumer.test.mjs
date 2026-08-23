@@ -148,3 +148,27 @@ test("input order and parser-only provenance do not alter normalized shared topo
     topology(projectAsetToVisualLinkNetwork(b)),
   );
 });
+
+test("production app delegates 3D authority to standalone @mts/visual", () => {
+  const source = readFileSync("src/app.js", "utf8");
+  assert.match(
+    source,
+    /from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
+    "production app must import standalone @mts/visual root",
+  );
+  assert.match(
+    source,
+    /from\s+["']\.\.\/generated\/mts-visual\/three\/index\.js["']/,
+    "production app must import standalone @mts/visual/three",
+  );
+  assert.doesNotMatch(
+    source,
+    /from\s+["']\.\/three-renderer\.js["']/,
+    "production app must not import the legacy local Three renderer",
+  );
+  assert.doesNotMatch(
+    source,
+    /from\s+["']\.\/live-physics3d\.js["']/,
+    "production app must not import the legacy local live solver",
+  );
+});
