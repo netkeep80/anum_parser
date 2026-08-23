@@ -28,22 +28,10 @@ async function boot3d(page) {
   await expect(page.locator("#graph > canvas")).toHaveCount(1);
   await page.locator("#graphPhysicsPause").click();
   await expect(page.locator("#graphPhysicsPause")).toHaveText("Продолжить");
+  await page.locator("#graphFit").click();
 }
 
-async function resetFixture(page) {
-  await page.selectOption("#graphView", "2d");
-  await page.locator("#run").click();
-  await expect(page.locator("#status")).toContainText("Готово");
-  await page.selectOption("#graphView", "3d");
-  await expect(page.locator("#graph > canvas")).toHaveCount(1);
-  if (await page.locator("#graphPhysicsPause").textContent() === "Пауза") {
-    await page.locator("#graphPhysicsPause").click();
-  }
-  await expect(page.locator("#graphPhysicsPause")).toHaveText("Продолжить");
-  await expect(page.locator("#graph")).not.toHaveAttribute("data-selected-link", /.+/);
-}
-
-async function greenCenterCandidates(page) {
+async function visualCenterCandidates(page) {
   const canvas = page.locator("#graph > canvas");
   const box = await canvas.boundingBox();
   if (!box) return [];
@@ -60,29 +48,33 @@ async function greenCenterCandidates(page) {
     const context = scratch.getContext("2d", { willReadFrequently: true });
     context.drawImage(image, 0, 0);
     const data = context.getImageData(0, 0, scratch.width, scratch.height).data;
-    const green = (x, y) => {
-      if (x < 0 || y < 0 || x >= scratch.width || y >= scratch.height) return false;
+    const greenDominance = (x, y) => {
+      if (x < 0 || y < 0 || x >= scratch.width || y >= scratch.height) return 0;
       const offset = (y * scratch.width + x) * 4;
-      return data[offset] < 80 && data[offset + 1] > 180 && data[offset + 2] < 80;
+      const r = data[offset];
+      const g = data[offset + 1];
+      const b = data[offset + 2];
+      const dominance = g - Math.max(r, b);
+      return g >= 35 && dominance >= 18 ? dominance : 0;
     };
     const scored = [];
-    for (let y = 5; y < scratch.height - 5; y += 3) {
-      for (let x = 5; x < scratch.width - 5; x += 3) {
-        if (!green(x, y)) continue;
-        let density = 0;
-        for (let dy = -5; dy <= 5; dy += 2) {
-          for (let dx = -5; dx <= 5; dx += 2) if (green(x + dx, y + dy)) density += 1;
+    for (let y = 6; y < scratch.height - 6; y += 3) {
+      for (let x = 6; x < scratch.width - 6; x += 3) {
+        if (greenDominance(x, y) === 0) continue;
+        let score = 0;
+        for (let dy = -6; dy <= 6; dy += 3) {
+          for (let dx = -6; dx <= 6; dx += 3) score += greenDominance(x + dx, y + dy);
         }
-        if (density >= 10) scored.push({ x, y, density });
+        scored.push({ x, y, score });
       }
     }
-    scored.sort((a, b) => b.density - a.density);
+    scored.sort((left, right) => right.score - left.score);
     const chosen = [];
     for (const candidate of scored) {
-      if (chosen.every((point) => Math.hypot(point.x - candidate.x, point.y - candidate.y) > 18)) {
+      if (chosen.every((point) => Math.hypot(point.x - candidate.x, point.y - candidate.y) > 8)) {
         chosen.push(candidate);
       }
-      if (chosen.length >= 12) break;
+      if (chosen.length >= 80) break;
     }
     return chosen.map((point) => ({ x: point.x / scratch.width, y: point.y / scratch.height }));
   }, dataUrl);
@@ -90,18 +82,21 @@ async function greenCenterCandidates(page) {
 }
 
 async function findPointForKey(page, key) {
-  for (const point of await greenCenterCandidates(page)) {
+  const candidates = await visualCenterCandidates(page);
+  expect(candidates.length).toBeGreaterThan(0);
+  for (const point of candidates) {
     await page.mouse.click(point.x, point.y);
-    await page.waitForTimeout(30);
+    await page.waitForTimeout(15);
     if (await page.locator("#graph").getAttribute("data-selected-link") === key) return point;
   }
   return null;
 }
 
-async function proveDragWithoutClick(page, key) {
-  const point = await findPointForKey(page, key);
-  expect(point, `visible center for ${key}`).not.toBeNull();
-  await resetFixture(page);
+async function proveDragWithoutClick(page, key, sentinelKey, point) {
+  const sentinelPoint = await findPointForKey(page, sentinelKey);
+  expect(sentinelPoint, `visible center for sentinel ${sentinelKey}`).not.toBeNull();
+  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", sentinelKey);
+
   const canvas = page.locator("#graph > canvas");
   const before = await canvas.screenshot();
   await page.mouse.move(point.x, point.y);
@@ -109,24 +104,25 @@ async function proveDragWithoutClick(page, key) {
   await page.mouse.move(point.x + 85, point.y + 38, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(80);
-  expect(await page.locator("#graph").getAttribute("data-selected-link")).toBeNull();
-  expect((await canvas.screenshot()).equals(before)).toBe(false);
+
+  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", sentinelKey);
+  expect((await canvas.screenshot()).equals(before), `${key} drag must move the shared scene`).toBe(false);
 }
 
 test("desktop shared canvas activates exact VisualKey and drag suppresses click", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await boot3d(page);
   const point = await findPointForKey(page, "L");
-  expect(point).not.toBeNull();
+  expect(point, "visible center for L").not.toBeNull();
   await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", "L");
-  await proveDragWithoutClick(page, "L");
+  await proveDragWithoutClick(page, "L", "R", point);
 });
 
 test("root is an ordinary draggable shared-physics Link", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await boot3d(page);
   const point = await findPointForKey(page, "R");
-  expect(point).not.toBeNull();
+  expect(point, "visible center for R").not.toBeNull();
   await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", "R");
-  await proveDragWithoutClick(page, "R");
+  await proveDragWithoutClick(page, "R", "L", point);
 });
