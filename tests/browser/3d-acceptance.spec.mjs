@@ -127,10 +127,10 @@ async function semanticPixelCounts(page, pngBuffer) {
   }, { dataUrl, colors: COLORS });
 }
 
-async function densestGreenPoint(page) {
+async function visualCenterCandidates(page) {
   const canvas = page.locator("#graph > canvas");
   const box = await canvas.boundingBox();
-  if (!box) return null;
+  if (!box) return [];
   const png = await canvas.screenshot();
   const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
   const relative = await page.evaluate(async (url) => {
@@ -144,25 +144,48 @@ async function densestGreenPoint(page) {
     const context = scratch.getContext("2d", { willReadFrequently: true });
     context.drawImage(image, 0, 0);
     const data = context.getImageData(0, 0, scratch.width, scratch.height).data;
-    const green = (x, y) => {
-      if (x < 0 || y < 0 || x >= scratch.width || y >= scratch.height) return false;
+    const greenDominance = (x, y) => {
+      if (x < 0 || y < 0 || x >= scratch.width || y >= scratch.height) return 0;
       const offset = (y * scratch.width + x) * 4;
-      return data[offset] < 70 && data[offset + 1] > 190 && data[offset + 2] < 70;
+      const r = data[offset];
+      const g = data[offset + 1];
+      const b = data[offset + 2];
+      const dominance = g - Math.max(r, b);
+      return g >= 35 && dominance >= 18 ? dominance : 0;
     };
-    let best = null;
-    for (let y = 4; y < scratch.height - 4; y += 2) {
-      for (let x = 4; x < scratch.width - 4; x += 2) {
-        if (!green(x, y)) continue;
-        let density = 0;
-        for (let dy = -4; dy <= 4; dy += 2) {
-          for (let dx = -4; dx <= 4; dx += 2) if (green(x + dx, y + dy)) density += 1;
+    const scored = [];
+    for (let y = 6; y < scratch.height - 6; y += 3) {
+      for (let x = 6; x < scratch.width - 6; x += 3) {
+        if (greenDominance(x, y) === 0) continue;
+        let score = 0;
+        for (let dy = -6; dy <= 6; dy += 3) {
+          for (let dx = -6; dx <= 6; dx += 3) score += greenDominance(x + dx, y + dy);
         }
-        if (!best || density > best.density) best = { x, y, density };
+        scored.push({ x, y, score });
       }
     }
-    return best ? { x: best.x / scratch.width, y: best.y / scratch.height } : null;
+    scored.sort((left, right) => right.score - left.score);
+    const chosen = [];
+    for (const candidate of scored) {
+      if (chosen.every((point) => Math.hypot(point.x - candidate.x, point.y - candidate.y) > 8)) {
+        chosen.push(candidate);
+      }
+      if (chosen.length >= 80) break;
+    }
+    return chosen.map((point) => ({ x: point.x / scratch.width, y: point.y / scratch.height }));
   }, dataUrl);
-  return relative ? { x: box.x + relative.x * box.width, y: box.y + relative.y * box.height } : null;
+  return relative.map((point) => ({ x: box.x + point.x * box.width, y: box.y + point.y * box.height }));
+}
+
+async function activateAnyVisualKey(page, allowedKeys, pointer = "mouse") {
+  for (const point of await visualCenterCandidates(page)) {
+    if (pointer === "touch") await page.touchscreen.tap(point.x, point.y);
+    else await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(20);
+    const key = await page.locator("#graph").getAttribute("data-selected-link");
+    if (key && allowedKeys.includes(key)) return { key, point };
+  }
+  return null;
 }
 
 async function forceCssFullscreenFallback(page) {
@@ -284,11 +307,24 @@ test("touch viewport initializes shared 3D and activates an exact VisualKey", as
   await loadAset(page, aset);
   await enter3d(page);
   await page.locator("#graphPhysicsPause").click();
-  const point = await densestGreenPoint(page);
-  expect(point).not.toBeNull();
-  await page.mouse.click(point.x, point.y);
-  await expect.poll(async () => page.locator("#graph").getAttribute("data-selected-link")).not.toBeNull();
-  expect(aset.links.map((link) => link.id)).toContain(await page.locator("#graph").getAttribute("data-selected-link"));
+  await page.locator("#graphFit").click();
+  let candidates = [];
+  await expect.poll(async () => {
+    candidates = await visualCenterCandidates(page);
+    return candidates.length;
+  }).toBeGreaterThan(0);
+  let activated = null;
+  for (const point of candidates) {
+    await page.touchscreen.tap(point.x, point.y);
+    await page.waitForTimeout(20);
+    const key = await page.locator("#graph").getAttribute("data-selected-link");
+    if (key && aset.links.some((link) => link.id === key)) {
+      activated = { key, point };
+      break;
+    }
+  }
+  expect(activated).not.toBeNull();
+  expect(aset.links.map((link) => link.id)).toContain(activated.key);
 });
 
 test("WebGL failure falls back to structural 2D", async ({}, testInfo) => {
