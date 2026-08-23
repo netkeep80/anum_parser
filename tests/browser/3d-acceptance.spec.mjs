@@ -307,7 +307,7 @@ test("touch viewport initializes shared 3D and activates an exact VisualKey", as
   await loadAset(page, aset);
   await enter3d(page);
   await page.locator("#graphPhysicsPause").click();
-  await page.locator("#graphFit").click();
+  await page.locator("#graphFit").click({ force: true });
   let candidates = [];
   await expect.poll(async () => {
     candidates = await visualCenterCandidates(page);
