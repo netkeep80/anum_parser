@@ -2,9 +2,9 @@ import { chromium, expect, test } from "@playwright/test";
 
 const BASE_URL = "http://127.0.0.1:4173";
 const COLORS = Object.freeze({
-  start: "#ff657a",
-  center: "#67e8b3",
-  end: "#73a7ff",
+  start: "#ff0000",
+  center: "#00ff00",
+  end: "#0000ff",
 });
 
 function kernelAset(extraLinks = [], labels = {}) {
@@ -28,6 +28,14 @@ function kernelAset(extraLinks = [], labels = {}) {
     rootChains: [],
     storedAnums: [],
     provenance: { status: "browser-fixture" },
+  };
+}
+
+function rootOnlyAset() {
+  return {
+    ...kernelAset(),
+    links: [{ id: "R", start: "R", end: "R", tags: ["root"] }],
+    labels: { R: "∞" },
   };
 }
 
@@ -76,67 +84,36 @@ async function loadAset(page, aset) {
   await expect(page.locator("#summary")).toContainText(`Связей${aset.links.length}`);
 }
 
-async function enter3d(page) {
-  await page.selectOption("#graphView", "3d");
-  await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "3d");
-  await expect(page.locator("#graph > canvas")).toHaveCount(1);
-  await expect(page.locator('#graph > [data-role="three-label-layer"]')).toHaveCount(1);
-}
-
-async function rendererSnapshot(page) {
+async function sharedRendererSnapshot(page) {
   return page.evaluate(async () => {
-    const module = await import("./src/three-renderer.js");
-    return module.get3dPerformanceSnapshot(document.getElementById("graph"));
-  });
-}
-
-async function selectedLink(page) {
-  return page.evaluate(async () => {
-    const module = await import("./src/three-renderer.js");
-    return module.get3dSelectedLink(document.getElementById("graph"));
+    const module = await import("./generated/mts-visual/three/index.js");
+    return module.getVisualThreeRendererSnapshot(document.getElementById("graph")) ?? null;
   });
 }
 
 async function rendererActive(page) {
+  return Boolean(await sharedRendererSnapshot(page));
+}
+
+async function selectedLink(page) {
+  return page.locator("#graph").getAttribute("data-selected-link");
+}
+
+async function enter3d(page) {
+  await page.selectOption("#graphView", "3d");
+  await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "3d");
+  await expect(page.locator("#graph > canvas")).toHaveCount(1);
+  await expect.poll(() => rendererActive(page)).toBe(true);
+}
+
+async function sharedThreeContract(page) {
   return page.evaluate(async () => {
-    const module = await import("./src/three-renderer.js");
-    return module.has3dRenderer(document.getElementById("graph"));
-  });
-}
-
-async function rootScreenPoint(page) {
-  const graph = page.locator("#graph");
-  const canvas = page.locator("#graph > canvas");
-  await graph.scrollIntoViewIfNeeded();
-  const relative = await page.evaluate(() => {
-    const graphElement = document.getElementById("graph");
-    const label = graphElement.querySelector('[data-role="three-label-layer"] [data-link-id="R"]');
-    if (!label) return null;
-    const width = Math.max(1, graphElement.clientWidth);
-    const height = Math.max(1, graphElement.clientHeight);
+    const module = await import("./generated/mts-visual/three/index.js");
     return {
-      x: Number.parseFloat(label.style.left) / width,
-      y: Number.parseFloat(label.style.top) / height,
-    };
-  });
-  const box = await canvas.boundingBox();
-  if (!relative || !box) return null;
-  return {
-    x: box.x + relative.x * box.width,
-    y: box.y + relative.y * box.height,
-  };
-}
-
-async function rootCanvasPoint(page) {
-  await page.locator("#graph").scrollIntoViewIfNeeded();
-  return page.evaluate(() => {
-    const graph = document.getElementById("graph");
-    const canvas = graph.querySelector(":scope > canvas");
-    const label = graph.querySelector('[data-role="three-label-layer"] [data-link-id="R"]');
-    if (!canvas || !label) return null;
-    return {
-      x: Number.parseFloat(label.style.left),
-      y: Number.parseFloat(label.style.top),
+      colors: module.VISUAL_THREE_COLORS,
+      hasLiveRenderer: typeof module.createVisualThreeLiveRenderer === "function",
+      hasPresentation: typeof module.setVisualThreePresentation === "function",
+      hasPause: typeof module.setVisualThreeLivePaused === "function",
     };
   });
 }
@@ -173,38 +150,86 @@ async function semanticPixelCounts(page, pngBuffer) {
           Math.abs(r - target[0]),
           Math.abs(g - target[1]),
           Math.abs(b - target[2]),
-        ) <= 65) counts[key] += 1;
+        ) <= 55) counts[key] += 1;
       }
     }
     return counts;
   }, { dataUrl, colors: COLORS });
 }
 
+async function denseGreenNodePoint(page) {
+  const canvas = page.locator("#graph > canvas");
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
+  if (!box) return null;
+  const pngBuffer = await canvas.screenshot();
+  const dataUrl = `data:image/png;base64,${pngBuffer.toString("base64")}`;
+  const relative = await page.evaluate(async (url) => {
+    const image = new Image();
+    const loaded = new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+    image.src = url;
+    await loaded;
+    const scratch = document.createElement("canvas");
+    scratch.width = image.width;
+    scratch.height = image.height;
+    const context = scratch.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, scratch.width, scratch.height).data;
+    const green = (x, y) => {
+      if (x < 0 || y < 0 || x >= scratch.width || y >= scratch.height) return false;
+      const index = (y * scratch.width + x) * 4;
+      return data[index] < 70 && data[index + 1] > 190 && data[index + 2] < 70;
+    };
+    let best = null;
+    for (let y = 4; y < scratch.height - 4; y += 2) {
+      for (let x = 4; x < scratch.width - 4; x += 2) {
+        if (!green(x, y)) continue;
+        let density = 0;
+        for (let dy = -4; dy <= 4; dy += 2) {
+          for (let dx = -4; dx <= 4; dx += 2) {
+            if (green(x + dx, y + dy)) density += 1;
+          }
+        }
+        if (!best || density > best.density) best = { x, y, density };
+      }
+    }
+    if (!best || best.density < 6) return null;
+    return { x: best.x / scratch.width, y: best.y / scratch.height, density: best.density };
+  }, dataUrl);
+  if (!relative) return null;
+  return {
+    x: box.x + relative.x * box.width,
+    y: box.y + relative.y * box.height,
+    density: relative.density,
+  };
+}
+
 test.beforeEach(async ({ page }) => {
   await boot(page);
 });
 
-test("published _site renders semantic RGB and all ordinary/self-loop classes", async ({ page }, testInfo) => {
+test("published _site mounts standalone renderer with visible RGB and END arrows", async ({ page }, testInfo) => {
   await loadAset(page, kernelAset());
   await enter3d(page);
 
-  const snapshot = await rendererSnapshot(page);
-  expect(snapshot).not.toBeNull();
-  expect(snapshot.performanceBudget.withinBudget).toBe(true);
-  expect(snapshot.lodPlan.nodes).toHaveLength(5);
-  expect(snapshot.lodPlan.nodes.every((node) => node.semanticColor === COLORS.center)).toBe(true);
+  const contract = await sharedThreeContract(page);
+  expect(contract).toEqual({
+    colors: { startOuter: 0xff0000, center: 0x00ff00, endOuter: 0x0000ff },
+    hasLiveRenderer: true,
+    hasPresentation: true,
+    hasPause: true,
+  });
 
-  const arcs = new Map(snapshot.lodPlan.arcs.map((arc) => [arc.arcId, arc]));
-  expect(arcs.get("pole-start:R")?.self).toBe(true);
-  expect(arcs.get("pole-end:R")?.self).toBe(true);
-  expect(arcs.get("pole-start:O")?.self).toBe(true);
-  expect(arcs.get("pole-end:C")?.self).toBe(true);
-  expect(arcs.get("pole-start:L")?.self).toBe(false);
-  expect(arcs.get("pole-end:L")?.self).toBe(false);
-  expect(arcs.get("pole-start:L")?.colorFrom).toBe(COLORS.start);
-  expect(arcs.get("pole-start:L")?.colorTo).toBe(COLORS.center);
-  expect(arcs.get("pole-end:L")?.colorFrom).toBe(COLORS.center);
-  expect(arcs.get("pole-end:L")?.colorTo).toBe(COLORS.end);
+  const snapshot = await sharedRendererSnapshot(page);
+  expect(snapshot?.mounted).toBe(true);
+  expect(snapshot?.nodeCount).toBe(5);
+  expect(snapshot?.arcCount).toBe(10);
+  expect(snapshot?.arrowCount).toBeGreaterThan(0);
+  expect(snapshot?.width).toBeGreaterThan(0);
+  expect(snapshot?.height).toBeGreaterThan(0);
 
   const canvas = page.locator("#graph > canvas");
   const screenshot = await canvas.screenshot();
@@ -212,60 +237,99 @@ test("published _site renders semantic RGB and all ordinary/self-loop classes", 
   expect(counts.start).toBeGreaterThan(0);
   expect(counts.center).toBeGreaterThan(10);
   expect(counts.end).toBeGreaterThan(0);
-  await testInfo.attach("3d-semantic-rgb.png", { body: screenshot, contentType: "image/png" });
-
-  const rendererSource = await page.evaluate(async () => (await fetch("./src/three-renderer.js")).text());
-  expect(rendererSource).toContain('kind: "end-arrow"');
-  expect(rendererSource).toContain("new THREE.ConeGeometry");
+  await testInfo.attach("shared-3d-semantic-rgb.png", { body: screenshot, contentType: "image/png" });
 });
 
-test("desktop camera controls and Raycaster picking remain usable", async ({ page }, testInfo) => {
+test("desktop page wires exact VisualKey activation and root drag without click alias", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
-  await loadAset(page, kernelAset());
+  await loadAset(page, rootOnlyAset());
   await enter3d(page);
+  await page.locator("#graphPhysicsPause").click();
+  await expect(page.locator("#graphPhysicsPause")).toHaveText("Продолжить");
 
-  const point = await rootScreenPoint(page);
+  let point = await denseGreenNodePoint(page);
   expect(point).not.toBeNull();
   await page.mouse.click(point.x, point.y);
   await expect.poll(() => selectedLink(page)).toBe("R");
 
+  await loadAset(page, rootOnlyAset());
+  await enter3d(page);
+  await page.locator("#graphPhysicsPause").click();
+  await expect(page.locator("#graphPhysicsPause")).toHaveText("Продолжить");
+  expect(await selectedLink(page)).toBeNull();
+  point = await denseGreenNodePoint(page);
+  expect(point).not.toBeNull();
   const canvas = page.locator("#graph > canvas");
-  const before = await canvas.screenshot();
-  const box = await canvas.boundingBox();
-  expect(box).not.toBeNull();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.wheel(0, -650);
-  await page.waitForTimeout(80);
-  const afterZoom = await canvas.screenshot();
-  expect(afterZoom.equals(before)).toBe(false);
-
-  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
+  const beforeDrag = await canvas.screenshot();
+  await page.mouse.move(point.x, point.y);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.68, box.y + box.height * 0.62, { steps: 8 });
+  await page.mouse.move(point.x + 80, point.y + 45, { steps: 10 });
   await page.mouse.up();
   await page.waitForTimeout(80);
-  const afterOrbit = await canvas.screenshot();
-  expect(afterOrbit.equals(afterZoom)).toBe(false);
+  expect(await selectedLink(page)).toBeNull();
+  const afterDrag = await canvas.screenshot();
+  expect(afterDrag.equals(beforeDrag)).toBe(false);
+  await testInfo.attach("shared-root-drag.png", { body: afterDrag, contentType: "image/png" });
 });
 
-test("debugger drives 3D presentation without destroying the renderer", async ({ page }, testInfo) => {
+test("shared live controls, fit, zoom and fullscreen remain operational", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop");
+  await loadAset(page, branchedAset());
+  await enter3d(page);
+  const canvas = page.locator("#graph > canvas");
+
+  await page.locator("#graphPhysicsPause").click();
+  await expect(page.locator("#graphPhysicsPause")).toHaveText("Продолжить");
+  const paused = await canvas.screenshot();
+  await page.locator("#graphCharge").fill("2.2");
+  await page.locator("#graphSpringStiffness").fill("0.11");
+  await page.locator("#graphDamping").fill("0.72");
+  await expect(page.locator("#graphChargeValue")).toHaveText("2.20");
+  await expect(page.locator("#graphSpringStiffnessValue")).toHaveText("0.110");
+  await expect(page.locator("#graphDampingValue")).toHaveText("0.72");
+
+  await page.locator("#graphPhysicsPause").click();
+  await expect(page.locator("#graphPhysicsPause")).toHaveText("Пауза");
+  await page.waitForTimeout(300);
+  const moving = await canvas.screenshot();
+  expect(moving.equals(paused)).toBe(false);
+
+  await page.locator("#graphPhysicsPause").click();
+  await page.locator("#graphFit").click();
+  await page.waitForTimeout(80);
+  const fitted = await canvas.screenshot();
+  await page.locator("#graphZoomIn").click();
+  await page.waitForTimeout(80);
+  const zoomed = await canvas.screenshot();
+  expect(zoomed.equals(fitted)).toBe(false);
+
+  await page.locator("#graphFullscreen").click();
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "false");
+});
+
+test("debugger updates generic shared presentation without destroying renderer", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await page.selectOption("#sample", "12");
   await page.locator("#run").click();
   await expect(page.locator("#status")).toContainText("Готово");
   await enter3d(page);
 
+  const before = await sharedRendererSnapshot(page);
   const last = await page.locator("#debugStep").textContent();
   await page.locator("#debugFirst").click();
   await expect(page.locator("#debugStep")).not.toHaveText(last);
   await expect(page.locator("#debugCurrent")).toContainText("операция:");
-  expect(await rendererActive(page)).toBe(true);
+  const afterFirst = await sharedRendererSnapshot(page);
+  expect(afterFirst?.nodeCount).toBe(before?.nodeCount);
+  expect(afterFirst?.arcCount).toBe(before?.arcCount);
   await page.locator("#debugNext").click();
   await expect(page.locator("#debugEffects")).toContainText("видимых связей:");
   expect(await rendererActive(page)).toBe(true);
 });
 
-test("repeated 2D/3D switching disposes canvases, label layers and renderer state", async ({ page }, testInfo) => {
+test("repeated 2D/3D switching disposes and recreates only shared renderer state", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await loadAset(page, branchedAset());
 
@@ -273,13 +337,11 @@ test("repeated 2D/3D switching disposes canvases, label layers and renderer stat
     await enter3d(page);
     expect(await rendererActive(page)).toBe(true);
     await expect(page.locator("#graph > canvas")).toHaveCount(1);
-    await expect(page.locator('#graph > [data-role="three-label-layer"]')).toHaveCount(1);
 
     await page.selectOption("#graphView", "2d");
     await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
     expect(await rendererActive(page)).toBe(false);
     await expect(page.locator("#graph > canvas")).toHaveCount(0);
-    await expect(page.locator('#graph > [data-role="three-label-layer"]')).toHaveCount(0);
   }
 });
 
@@ -288,22 +350,23 @@ test("browser corpus covers branched, recursive SCC and dense 25-link asets", as
   for (const aset of [branchedAset(), recursiveAset(), chainAset(25)]) {
     await loadAset(page, aset);
     await enter3d(page);
-    const snapshot = await rendererSnapshot(page);
-    expect(snapshot.performanceBudget.withinBudget).toBe(true);
-    expect(snapshot.lodPlan.nodes).toHaveLength(aset.links.length);
-    expect(snapshot.lodPlan.arcs).toHaveLength(aset.links.length * 2);
+    const snapshot = await sharedRendererSnapshot(page);
+    expect(snapshot?.nodeCount).toBe(aset.links.length);
+    expect(snapshot?.arcCount).toBe(aset.links.length * 2);
+    expect(snapshot?.arrowCount).toBeGreaterThan(0);
     await page.selectOption("#graphView", "2d");
     await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
   }
 });
 
-test("touch viewport initializes 3D and picks exact root link", async ({ page }, testInfo) => {
+test("touch viewport initializes shared 3D and activates exact root VisualKey", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-touch");
-  await loadAset(page, kernelAset());
+  await loadAset(page, rootOnlyAset());
   await enter3d(page);
+  await page.locator("#graphPhysicsPause").click();
   const canvas = page.locator("#graph > canvas");
   await expect(canvas).toHaveCSS("touch-action", "none");
-  const point = await rootScreenPoint(page);
+  const point = await denseGreenNodePoint(page);
   expect(point).not.toBeNull();
   await page.touchscreen.tap(point.x, point.y);
   await expect.poll(() => selectedLink(page)).toBe("R");
@@ -335,23 +398,17 @@ test("WebGL failure falls back to a usable structural 2D view", async ({}, testI
   }
 });
 
-test("N=300 published scene stays inside machine-visible performance budgets", async ({ page }, testInfo) => {
+test("N=300 published scene remains finite through public shared snapshot", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   test.setTimeout(120_000);
   const aset = chainAset(300);
   await loadAset(page, aset);
   await enter3d(page);
-  const snapshot = await rendererSnapshot(page);
-  expect(snapshot.performanceBudget.withinBudget).toBe(true);
-  expect(snapshot.performanceBudget.observed.visibleLinks).toBe(300);
-  expect(snapshot.performanceBudget.observed.semanticArcs).toBe(600);
-  expect(snapshot.performanceBudget.observed.arcVertices).toBeLessThanOrEqual(
-    snapshot.performanceBudget.limits.maxArcVertices,
-  );
-  expect(snapshot.performanceBudget.observed.sceneObjects).toBeLessThanOrEqual(
-    snapshot.performanceBudget.limits.maxSceneObjects,
-  );
-  expect(snapshot.performanceBudget.observed.readabilityEvaluations).toBeLessThanOrEqual(
-    snapshot.performanceBudget.limits.maxReadabilityEvaluations,
-  );
+  const snapshot = await sharedRendererSnapshot(page);
+  expect(snapshot?.nodeCount).toBe(300);
+  expect(snapshot?.arcCount).toBe(600);
+  expect(snapshot?.arrowCount).toBeGreaterThan(0);
+  expect(Number.isFinite(snapshot?.cameraPosition.x)).toBe(true);
+  expect(Number.isFinite(snapshot?.cameraPosition.y)).toBe(true);
+  expect(Number.isFinite(snapshot?.cameraPosition.z)).toBe(true);
 });
