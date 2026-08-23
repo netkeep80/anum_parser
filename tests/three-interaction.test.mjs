@@ -153,17 +153,24 @@ test("debugger presentation не перекрашивает semantic node/spring
   assert.match(presentationSection, /debugHalo\.material\.color/);
 });
 
-test("app сохраняет settled physics/readability и debugger step не перезапускает world layout", async () => {
+test("app сохраняет initial readable seed, а debugger меняет только shared presentation", async () => {
   const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 
   assert.match(source, /state\.physicalState \?\?= solveReadableLayout3d\(state\.visualModel\)/);
-  assert.match(source, /set3dDebugState\(ui\.graph, item\)/);
-  assert.match(source, /selectedLinkId: state\.selectedLinkId/);
-  assert.match(source, /onSelectLink: \(linkId\) =>/);
+  assert.match(source, /state\.visualInitialState \?\?= projectReadableLayoutToPhysics3DState/);
+  assert.match(source, /state\.visualLiveController \?\?= createLivePhysics3D/);
+  assert.match(source, /setVisualThreePresentation\(/);
+  assert.match(source, /projectParserVisualPresentation\(/);
+  assert.match(source, /onActivateKey:\s*\(key\) =>/);
+  assert.doesNotMatch(source, /set3dDebugState|create3dRenderer/);
+
+  const settleCalls = source.match(/solveReadableLayout3d\(/g) ?? [];
+  assert.equal(settleCalls.length, 1, "readable layout is only an initial-state seed");
 
   const start = source.indexOf("function renderDebugger");
   const end = source.indexOf("function renderDebugSource", start);
   assert.ok(start >= 0 && end > start);
   const debuggerSection = source.slice(start, end);
-  assert.doesNotMatch(debuggerSection, /solvePhysicalLayout3d|solveReadableLayout3d/);
+  assert.match(debuggerSection, /applyShared3dPresentation\(\)/);
+  assert.doesNotMatch(debuggerSection, /solvePhysicalLayout3d|solveReadableLayout3d|createLivePhysics3D/);
 });
