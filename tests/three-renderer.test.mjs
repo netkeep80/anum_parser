@@ -162,7 +162,7 @@ test("Three renderer зависит от local package boundary, но не чи�
   assert.doesNotMatch(source, /https?:\/\//i);
 });
 
-test("UI сохраняет 2D default и явно переключает 2D/blueprint/3D renderer lifecycle", async () => {
+test("UI сохраняет 2D default, а production 3D lifecycle делегирует standalone @mts/visual", async () => {
   const [html, app] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../src/app.js", import.meta.url), "utf8"),
@@ -174,18 +174,21 @@ test("UI сохраняет 2D default и явно переключает 2D/blu
   assert.match(html, /<option value="3d">3D — механическая асеть<\/option>/);
   assert.match(app, /graphView:\s*"2d"/);
   assert.match(app, /state\.visualModel = buildVisualModel\(aset\)/);
+  assert.match(app, /state\.visualNetwork = projectAsetToVisualLinkNetwork\(aset\)/);
   assert.match(app, /createBlueprintRenderer\(ui\.graph, state\.visualModel,/);
   assert.match(app, /destroyBlueprintRenderer\(ui\.graph\)/);
   assert.match(app, /fitBlueprintRenderer\(ui\.graph\)/);
   assert.match(app, /zoomBlueprintRenderer\(ui\.graph, factor\)/);
   assert.match(app, /solveReadableLayout3d\(state\.visualModel\)/);
+  assert.match(app, /createLivePhysics3D\(/);
   assert.match(
     app,
-    /create3dRenderer\(ui\.graph, state\.visualModel, state\.physicalState,\s*\{/,
+    /createVisualThreeLiveRenderer\(ui\.graph, state\.visualNetwork, controller,\s*\{/,
   );
-  assert.match(app, /debugState:\s*currentDebugState\(\)/);
-  assert.match(app, /selectedLinkId:\s*state\.selectedLinkId/);
-  assert.match(app, /destroy3dRenderer\(ui\.graph\)/);
+  assert.match(app, /onActivateKey:\s*\(key\) =>/);
+  assert.match(app, /setVisualThreePresentation\(/);
+  assert.match(app, /destroyVisualThreeRenderer\(ui\.graph\)/);
+  assert.doesNotMatch(app, /create3dRenderer\(|destroy3dRenderer\(|set3dDebugState\(/);
   assert.match(app, /renderAset\(ui\.graph, aset,/);
   assert.match(app, /const is2d = state\.graphView === "2d"/);
   assert.match(app, /ui\.graphLayout\.disabled = !is2d/);
