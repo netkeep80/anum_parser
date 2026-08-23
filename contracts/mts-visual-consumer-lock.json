@@ -1,0 +1,30 @@
+{
+  "schema": "anum-parser-mts-visual-consumer-lock/v0.1",
+  "channel": "accepted-presentation",
+  "repository": "netkeep80/anum_docs",
+  "commit": "aca8984ba94b4ecd33de3a003a4bba3eb5fce56f",
+  "package": {
+    "root": "packages/visual",
+    "name": "@mts/visual",
+    "version": "0.1.0",
+    "private": true,
+    "manifest": {
+      "path": "packages/visual/package.json",
+      "gitBlobSha": "847ed9f1c1c558d1c8afcb8c66c09ddb7eac168c"
+    },
+    "lockfile": {
+      "path": "packages/visual/package-lock.json",
+      "gitBlobSha": "4b8020e2a6c1fd247234b2c8815171bd2377cac6",
+      "lockfileVersion": 3
+    },
+    "dependencies": {
+      "three": "0.185.1"
+    }
+  },
+  "authority": {
+    "floatingRefAllowed": false,
+    "deepSourceImportAllowed": false,
+    "semanticAcceptanceClaimed": false,
+    "semanticCoreLockIndependent": true
+  }
+}
