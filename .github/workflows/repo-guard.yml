@@ -16,13 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Run repo-guard
         id: repo_guard
-        uses: netkeep80/repo-guard@b3a2c0c60631a4aaba38100c28fb6535e13fe018
+        uses: netkeep80/repo-guard@03e24a781f024ab1c91e79678737fe4ded743d48
         with:
           mode: check-pr
           enforcement: blocking
