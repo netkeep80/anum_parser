@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 const lockPath = resolve("contracts/mts-visual-consumer-lock.json");
 const generatedRoot = resolve("generated");
@@ -99,10 +99,10 @@ function cacheIsValid() {
 assert.equal(lock.schema, "anum-parser-mts-visual-consumer-lock/v0.1");
 assert.equal(lock.channel, "accepted-presentation");
 assert.match(lock.commit, /^[0-9a-f]{40}$/);
-assert.equal(lock.repository, "netkeep80/anum_docs");
+assert.equal(lock.repository, "netkeep80/mts_visual");
 assert.equal(lock.package.name, "@mts/visual");
 assert.equal(lock.package.version, "0.1.0");
-assert.equal(lock.package.root, "packages/visual");
+assert.equal(lock.package.root, ".");
 assert.equal(lock.package.dependencies.three, "0.185.1");
 assert.equal(lock.authority.floatingRefAllowed, false);
 assert.equal(lock.authority.deepSourceImportAllowed, false);
@@ -116,7 +116,7 @@ if (cacheIsValid()) {
 
 const scratch = mkdtempSync(join(tmpdir(), "anum-parser-materialize-visual-"));
 try {
-  const source = join(scratch, "anum_docs");
+  const source = join(scratch, "mts_visual");
   run("git", ["init", "--quiet", source], scratch);
   run("git", ["-C", source, "remote", "add", "origin", `https://github.com/${lock.repository}.git`], scratch);
   run("git", ["-C", source, "fetch", "--quiet", "--depth=1", "origin", lock.commit], scratch);
@@ -141,25 +141,16 @@ try {
   assert.equal(manifest.version, lock.package.version);
   assert.equal(manifest.private, lock.package.private);
   assert.equal(manifest.dependencies?.three, lock.package.dependencies.three);
+  assert.equal(manifest.devDependencies?.typescript, "5.9.3");
   assert.equal(packageLock.name, lock.package.name);
   assert.equal(packageLock.version, lock.package.version);
   assert.equal(packageLock.lockfileVersion, lock.package.lockfile.lockfileVersion);
   assert.equal(packageLock.packages?.[""]?.dependencies?.three, lock.package.dependencies.three);
-
-  const toolchainRoot = join(source, "ts");
-  const toolchainManifest = JSON.parse(readFileSync(join(toolchainRoot, "package.json"), "utf8"));
-  assert.equal(toolchainManifest.devDependencies?.typescript, "5.9.3");
+  assert.equal(packageLock.packages?.[""]?.devDependencies?.typescript, "5.9.3");
 
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   run(npm, ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], packageRoot);
-  run(npm, ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], toolchainRoot);
-
-  const compilerBin = join(toolchainRoot, "node_modules", ".bin");
-  const buildEnv = {
-    ...process.env,
-    PATH: `${compilerBin}${delimiter}${process.env.PATH ?? ""}`,
-  };
-  run(npm, ["run", "build", "--silent"], packageRoot, buildEnv);
+  run(npm, ["run", "build", "--silent"], packageRoot);
 
   const built = join(packageRoot, "dist", "src");
   assert.ok(existsSync(join(built, "index.js")), "built @mts/visual root entry missing");
