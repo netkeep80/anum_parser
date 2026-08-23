@@ -2,10 +2,7 @@ import { expect, test } from "@playwright/test";
 
 function kernelAset() {
   return {
-    format: "mts-aset",
-    version: "0.2",
-    identity: "by-poles",
-    root: "R",
+    format: "mts-aset", version: "0.2", identity: "by-poles", root: "R",
     links: [
       { id: "R", start: "R", end: "R", tags: ["root"] },
       { id: "O", start: "O", end: "R", tags: ["root-abit", "opening"] },
@@ -14,11 +11,7 @@ function kernelAset() {
       { id: "U", start: "C", end: "O", tags: ["root-abit", "unlinked"] },
     ],
     labels: { R: "∞", O: "[", C: "]", L: "1", U: "0" },
-    symbolSequences: [],
-    abitSequences: [],
-    linkSequences: [],
-    rootChains: [],
-    storedAnums: [],
+    symbolSequences: [], abitSequences: [], linkSequences: [], rootChains: [], storedAnums: [],
     provenance: { status: "browser-live-drag-fixture" },
   };
 }
@@ -33,94 +26,101 @@ async function boot3d(page) {
   await page.selectOption("#graphView", "3d");
   await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "3d");
   await expect(page.locator("#graph > canvas")).toHaveCount(1);
+  await page.locator("#graphPhysicsPause").click();
+  await expect(page.locator("#graphPhysicsPause")).toHaveText("Продолжить");
+  await page.locator("#graphFit").click();
 }
 
-async function liveSnapshot(page) {
-  return page.evaluate(async () => {
-    const module = await import("./src/three-renderer.js");
-    return module.get3dLivePhysicsSnapshot(document.getElementById("graph"));
-  });
-}
+async function publicHaloPoint(page, key) {
+  const applied = await page.evaluate(async (targetKey) => {
+    const module = await import("./generated/mts-visual/three/index.js");
+    return module.setVisualThreePresentation(document.getElementById("graph"), {
+      links: [{
+        key: targetKey,
+        halo: { color: 0xff00ff, scale: 2.8, opacity: 1 },
+      }],
+    });
+  }, key);
+  expect(applied).toBe(true);
 
-async function selectLink(page, linkId) {
-  await page.evaluate(async (id) => {
-    const module = await import("./src/three-renderer.js");
-    module.set3dSelectedLink(document.getElementById("graph"), id);
-  }, linkId);
-  await expect(page.locator(`[data-role="three-label-layer"] [data-link-id="${linkId}"]`)).toBeVisible();
-}
-
-async function linkScreenPoint(page, linkId) {
   const canvas = page.locator("#graph > canvas");
-  await canvas.scrollIntoViewIfNeeded();
+  const png = await canvas.screenshot();
   const box = await canvas.boundingBox();
-  const point = await page.evaluate((id) => {
-    const graph = document.getElementById("graph");
-    const label = graph.querySelector(`[data-role="three-label-layer"] [data-link-id="${id}"]`);
-    if (!graph || !label) return null;
+  if (!box) return null;
+  const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
+  const relative = await page.evaluate(async (url) => {
+    const image = new Image();
+    const loaded = new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+    image.src = url;
+    await loaded;
+    const scratch = document.createElement("canvas");
+    scratch.width = image.width;
+    scratch.height = image.height;
+    const context = scratch.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, scratch.width, scratch.height).data;
+    let minX = scratch.width;
+    let minY = scratch.height;
+    let maxX = -1;
+    let maxY = -1;
+    let count = 0;
+    for (let y = 0; y < scratch.height; y += 1) {
+      for (let x = 0; x < scratch.width; x += 1) {
+        const offset = (y * scratch.width + x) * 4;
+        const r = data[offset];
+        const g = data[offset + 1];
+        const b = data[offset + 2];
+        if (r < 160 || b < 160 || g > 110 || Math.min(r, b) - g < 80) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+        count += 1;
+      }
+    }
+    if (count < 4 || maxX < minX || maxY < minY) return null;
     return {
-      x: Number.parseFloat(label.style.left),
-      y: Number.parseFloat(label.style.top),
+      x: ((minX + maxX) / 2) / scratch.width,
+      y: ((minY + maxY) / 2) / scratch.height,
     };
-  }, linkId);
-  if (!box || !point) return null;
-  return { x: box.x + point.x, y: box.y + point.y };
+  }, dataUrl);
+  return relative ? { x: box.x + relative.x * box.width, y: box.y + relative.y * box.height } : null;
 }
 
-function moved(before, after, id, epsilon = 1e-4) {
-  const left = before.positions[id];
-  const right = after.positions[id];
-  if (!left || !right) return false;
-  return Math.hypot(right.x - left.x, right.y - left.y, right.z - left.z) > epsilon;
+async function activateExactKey(page, key) {
+  const point = await publicHaloPoint(page, key);
+  expect(point, `public presentation halo for ${key}`).not.toBeNull();
+  await page.mouse.click(point.x, point.y);
+  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", key);
+  return point;
 }
 
-test("desktop drag pins a free link center and propagates motion through the live aset", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop");
-  await boot3d(page);
+async function proveDragWithoutClick(page, key, sentinelKey, point) {
+  await activateExactKey(page, sentinelKey);
+  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", sentinelKey);
 
-  await selectLink(page, "L");
-  const before = await liveSnapshot(page);
-  const point = await linkScreenPoint(page, "L");
-  expect(point).not.toBeNull();
-
+  const canvas = page.locator("#graph > canvas");
+  const before = await canvas.screenshot();
   await page.mouse.move(point.x, point.y);
   await page.mouse.down();
-  await page.mouse.move(point.x + 90, point.y + 35, { steps: 5 });
-
-  await expect.poll(async () => (await liveSnapshot(page))?.draggingLinkId).toBe("L");
-  const during = await liveSnapshot(page);
-  expect(during.pinnedNodeIds).toContain("L");
-  expect(moved(before, during, "L", 0.02)).toBe(true);
-  expect(during.positions.R).toEqual({ x: 0, y: 0, z: 0 });
-
-  await expect.poll(async () => {
-    const current = await liveSnapshot(page);
-    return ["O", "C", "U"].some((id) => moved(before, current, id, 1e-6));
-  }).toBe(true);
-
+  await page.mouse.move(point.x + 85, point.y + 38, { steps: 8 });
   await page.mouse.up();
-  await expect.poll(async () => (await liveSnapshot(page))?.draggingLinkId).toBeNull();
-  await expect.poll(async () => (await liveSnapshot(page))?.pinnedNodeIds.includes("L")).toBe(false);
+  await page.waitForTimeout(80);
 
-  const released = await liveSnapshot(page);
-  expect(released.tick).toBeGreaterThan(before.tick);
-  expect(released.positions.R).toEqual({ x: 0, y: 0, z: 0 });
-  await expect.poll(async () => (await liveSnapshot(page))?.tick).toBeGreaterThan(released.tick);
+  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", sentinelKey);
+  expect((await canvas.screenshot()).equals(before), `${key} drag must move the shared scene`).toBe(false);
+}
+
+test("desktop shared canvas activates exact VisualKey and drag suppresses click", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop");
+  await boot3d(page);
+  const point = await activateExactKey(page, "L");
+  await proveDragWithoutClick(page, "L", "R", point);
 });
 
-test("root remains selectable but cannot enter drag/pin state", async ({ page }, testInfo) => {
+test("root is an ordinary draggable shared-physics Link", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await boot3d(page);
-  await selectLink(page, "R");
-  const point = await linkScreenPoint(page, "R");
-  expect(point).not.toBeNull();
-
-  await page.mouse.move(point.x, point.y);
-  await page.mouse.down();
-  await page.mouse.move(point.x + 80, point.y + 30, { steps: 4 });
-  const during = await liveSnapshot(page);
-  expect(during.draggingLinkId).toBeNull();
-  expect(during.pinnedNodeIds).not.toContain("R");
-  expect(during.positions.R).toEqual({ x: 0, y: 0, z: 0 });
-  await page.mouse.up();
+  const point = await activateExactKey(page, "R");
+  await proveDragWithoutClick(page, "R", "L", point);
 });

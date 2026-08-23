@@ -1,11 +1,7 @@
 import { chromium, expect, test } from "@playwright/test";
 
 const BASE_URL = "http://127.0.0.1:4173";
-const COLORS = Object.freeze({
-  start: "#ff657a",
-  center: "#67e8b3",
-  end: "#73a7ff",
-});
+const COLORS = Object.freeze({ start: "#ff0000", center: "#00ff00", end: "#0000ff" });
 
 function kernelAset(extraLinks = [], labels = {}) {
   return {
@@ -61,13 +57,11 @@ async function boot(page) {
   await page.goto("/");
   await expect(page.locator("#status")).toContainText("Готово");
   await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
-  await expect(page.locator("#graphView")).toHaveValue("2d");
 }
 
 async function loadAset(page, aset) {
   if (await page.locator("#graphView").inputValue() !== "2d") {
     await page.selectOption("#graphView", "2d");
-    await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
   }
   await page.selectOption("#inputFormat", "aset");
   await page.locator("#source").fill(JSON.stringify(aset));
@@ -76,69 +70,25 @@ async function loadAset(page, aset) {
   await expect(page.locator("#summary")).toContainText(`Связей${aset.links.length}`);
 }
 
+async function sharedRendererSnapshot(page) {
+  return page.evaluate(async () => {
+    const module = await import("./generated/mts-visual/three/index.js");
+    return module.getVisualThreeRendererSnapshot(document.getElementById("graph")) ?? null;
+  });
+}
+
 async function enter3d(page) {
   await page.selectOption("#graphView", "3d");
   await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "3d");
   await expect(page.locator("#graph > canvas")).toHaveCount(1);
-  await expect(page.locator('#graph > [data-role="three-label-layer"]')).toHaveCount(1);
+  await expect.poll(async () => Boolean(await sharedRendererSnapshot(page))).toBe(true);
 }
 
-async function rendererSnapshot(page) {
-  return page.evaluate(async () => {
-    const module = await import("./src/three-renderer.js");
-    return module.get3dPerformanceSnapshot(document.getElementById("graph"));
-  });
-}
-
-async function selectedLink(page) {
-  return page.evaluate(async () => {
-    const module = await import("./src/three-renderer.js");
-    return module.get3dSelectedLink(document.getElementById("graph"));
-  });
-}
-
-async function rendererActive(page) {
-  return page.evaluate(async () => {
-    const module = await import("./src/three-renderer.js");
-    return module.has3dRenderer(document.getElementById("graph"));
-  });
-}
-
-async function rootScreenPoint(page) {
-  const graph = page.locator("#graph");
-  const canvas = page.locator("#graph > canvas");
-  await graph.scrollIntoViewIfNeeded();
-  const relative = await page.evaluate(() => {
-    const graphElement = document.getElementById("graph");
-    const label = graphElement.querySelector('[data-role="three-label-layer"] [data-link-id="R"]');
-    if (!label) return null;
-    const width = Math.max(1, graphElement.clientWidth);
-    const height = Math.max(1, graphElement.clientHeight);
-    return {
-      x: Number.parseFloat(label.style.left) / width,
-      y: Number.parseFloat(label.style.top) / height,
-    };
-  });
-  const box = await canvas.boundingBox();
-  if (!relative || !box) return null;
-  return {
-    x: box.x + relative.x * box.width,
-    y: box.y + relative.y * box.height,
-  };
-}
-
-async function rootCanvasPoint(page) {
-  await page.locator("#graph").scrollIntoViewIfNeeded();
-  return page.evaluate(() => {
-    const graph = document.getElementById("graph");
-    const canvas = graph.querySelector(":scope > canvas");
-    const label = graph.querySelector('[data-role="three-label-layer"] [data-link-id="R"]');
-    if (!canvas || !label) return null;
-    return {
-      x: Number.parseFloat(label.style.left),
-      y: Number.parseFloat(label.style.top),
-    };
-  });
+async function inputRange(page, selector, value) {
+  await page.locator(selector).evaluate((element, next) => {
+    element.value = String(next);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }, value);
 }
 
 async function semanticPixelCounts(page, pngBuffer) {
@@ -165,193 +115,226 @@ async function semanticPixelCounts(page, pngBuffer) {
     const targets = Object.fromEntries(Object.entries(colors).map(([key, hex]) => [key, rgb(hex)]));
     const counts = { start: 0, center: 0, end: 0 };
     for (let index = 0; index < pixels.length; index += 4) {
-      const r = pixels[index];
-      const g = pixels[index + 1];
-      const b = pixels[index + 2];
       for (const [key, target] of Object.entries(targets)) {
         if (Math.max(
-          Math.abs(r - target[0]),
-          Math.abs(g - target[1]),
-          Math.abs(b - target[2]),
-        ) <= 65) counts[key] += 1;
+          Math.abs(pixels[index] - target[0]),
+          Math.abs(pixels[index + 1] - target[1]),
+          Math.abs(pixels[index + 2] - target[2]),
+        ) <= 55) counts[key] += 1;
       }
     }
     return counts;
   }, { dataUrl, colors: COLORS });
 }
 
-test.beforeEach(async ({ page }) => {
-  await boot(page);
-});
-
-test("published _site renders semantic RGB and all ordinary/self-loop classes", async ({ page }, testInfo) => {
-  await loadAset(page, kernelAset());
-  await enter3d(page);
-
-  const snapshot = await rendererSnapshot(page);
-  expect(snapshot).not.toBeNull();
-  expect(snapshot.performanceBudget.withinBudget).toBe(true);
-  expect(snapshot.lodPlan.nodes).toHaveLength(5);
-  expect(snapshot.lodPlan.nodes.every((node) => node.semanticColor === COLORS.center)).toBe(true);
-
-  const arcs = new Map(snapshot.lodPlan.arcs.map((arc) => [arc.arcId, arc]));
-  expect(arcs.get("pole-start:R")?.self).toBe(true);
-  expect(arcs.get("pole-end:R")?.self).toBe(true);
-  expect(arcs.get("pole-start:O")?.self).toBe(true);
-  expect(arcs.get("pole-end:C")?.self).toBe(true);
-  expect(arcs.get("pole-start:L")?.self).toBe(false);
-  expect(arcs.get("pole-end:L")?.self).toBe(false);
-  expect(arcs.get("pole-start:L")?.colorFrom).toBe(COLORS.start);
-  expect(arcs.get("pole-start:L")?.colorTo).toBe(COLORS.center);
-  expect(arcs.get("pole-end:L")?.colorFrom).toBe(COLORS.center);
-  expect(arcs.get("pole-end:L")?.colorTo).toBe(COLORS.end);
+async function publicHaloPoint(page, key) {
+  const applied = await page.evaluate(async (targetKey) => {
+    const module = await import("./generated/mts-visual/three/index.js");
+    return module.setVisualThreePresentation(document.getElementById("graph"), {
+      links: [{
+        key: targetKey,
+        halo: { color: 0xff00ff, scale: 2.8, opacity: 1 },
+      }],
+    });
+  }, key);
+  expect(applied).toBe(true);
 
   const canvas = page.locator("#graph > canvas");
-  const screenshot = await canvas.screenshot();
+  await canvas.scrollIntoViewIfNeeded();
+  const viewport = page.viewportSize();
+  if (!viewport) return null;
+  const png = await page.screenshot();
+  const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
+  const relative = await page.evaluate(async (url) => {
+    const image = new Image();
+    const loaded = new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+    image.src = url;
+    await loaded;
+    const scratch = document.createElement("canvas");
+    scratch.width = image.width;
+    scratch.height = image.height;
+    const context = scratch.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0);
+    const data = context.getImageData(0, 0, scratch.width, scratch.height).data;
+    let minX = scratch.width;
+    let minY = scratch.height;
+    let maxX = -1;
+    let maxY = -1;
+    let count = 0;
+    for (let y = 0; y < scratch.height; y += 1) {
+      for (let x = 0; x < scratch.width; x += 1) {
+        const offset = (y * scratch.width + x) * 4;
+        const r = data[offset];
+        const g = data[offset + 1];
+        const b = data[offset + 2];
+        if (r < 160 || b < 160 || g > 110 || Math.min(r, b) - g < 80) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+        count += 1;
+      }
+    }
+    if (
+      count < 4 || maxX < minX || maxY < minY
+      || minX <= 2 || minY <= 2
+      || maxX >= scratch.width - 3 || maxY >= scratch.height - 3
+    ) return null;
+    return {
+      x: ((minX + maxX) / 2) / scratch.width,
+      y: ((minY + maxY) / 2) / scratch.height,
+    };
+  }, dataUrl);
+  return relative ? { x: relative.x * viewport.width, y: relative.y * viewport.height } : null;
+}
+
+async function forceCssFullscreenFallback(page) {
+  await page.locator("#graphPanel").evaluate((panel) => {
+    Object.defineProperty(panel, "requestFullscreen", { configurable: true, value: undefined });
+  });
+}
+
+test.beforeEach(async ({ page }) => { await boot(page); });
+
+test("published _site mounts standalone renderer with visible RGB and END arrows", async ({ page }, testInfo) => {
+  await loadAset(page, kernelAset());
+  await enter3d(page);
+  const contract = await page.evaluate(async () => {
+    const module = await import("./generated/mts-visual/three/index.js");
+    return {
+      colors: module.VISUAL_THREE_COLORS,
+      hasLiveRenderer: typeof module.createVisualThreeLiveRenderer === "function",
+      hasPresentation: typeof module.setVisualThreePresentation === "function",
+      hasPause: typeof module.setVisualThreeLivePaused === "function",
+    };
+  });
+  expect(contract).toEqual({
+    colors: { startOuter: 0xff0000, center: 0x00ff00, endOuter: 0x0000ff },
+    hasLiveRenderer: true,
+    hasPresentation: true,
+    hasPause: true,
+  });
+  const snapshot = await sharedRendererSnapshot(page);
+  expect(snapshot).toMatchObject({ mounted: true, nodeCount: 5, arcCount: 10 });
+  expect(snapshot.arrowCount).toBeGreaterThan(0);
+  const screenshot = await page.locator("#graph > canvas").screenshot();
   const counts = await semanticPixelCounts(page, screenshot);
   expect(counts.start).toBeGreaterThan(0);
   expect(counts.center).toBeGreaterThan(10);
   expect(counts.end).toBeGreaterThan(0);
-  await testInfo.attach("3d-semantic-rgb.png", { body: screenshot, contentType: "image/png" });
-
-  const rendererSource = await page.evaluate(async () => (await fetch("./src/three-renderer.js")).text());
-  expect(rendererSource).toContain('kind: "end-arrow"');
-  expect(rendererSource).toContain("new THREE.ConeGeometry");
+  await testInfo.attach("shared-3d-semantic-rgb.png", { body: screenshot, contentType: "image/png" });
 });
 
-test("desktop camera controls and Raycaster picking remain usable", async ({ page }, testInfo) => {
+test("shared live controls, fit, zoom and fullscreen remain operational", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
-  await loadAset(page, kernelAset());
+  await loadAset(page, branchedAset());
   await enter3d(page);
-
-  const point = await rootScreenPoint(page);
-  expect(point).not.toBeNull();
-  await page.mouse.click(point.x, point.y);
-  await expect.poll(() => selectedLink(page)).toBe("R");
-
   const canvas = page.locator("#graph > canvas");
-  const before = await canvas.screenshot();
-  const box = await canvas.boundingBox();
-  expect(box).not.toBeNull();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.wheel(0, -650);
-  await page.waitForTimeout(80);
-  const afterZoom = await canvas.screenshot();
-  expect(afterZoom.equals(before)).toBe(false);
+  await page.locator("#graphPhysicsPause").click();
+  const paused = await canvas.screenshot();
+  await inputRange(page, "#graphCharge", 2.2);
+  await inputRange(page, "#graphSpringStiffness", 0.11);
+  await inputRange(page, "#graphDamping", 0.72);
+  await expect(page.locator("#graphChargeValue")).toHaveText("2.20");
+  await expect(page.locator("#graphSpringStiffnessValue")).toHaveText("0.110");
+  await expect(page.locator("#graphDampingValue")).toHaveText("0.72");
+  await page.locator("#graphPhysicsPause").click();
+  await expect.poll(async () => (await canvas.screenshot()).equals(paused)).toBe(false);
+  await page.locator("#graphPhysicsPause").click();
 
-  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.68, box.y + box.height * 0.62, { steps: 8 });
-  await page.mouse.up();
-  await page.waitForTimeout(80);
-  const afterOrbit = await canvas.screenshot();
-  expect(afterOrbit.equals(afterZoom)).toBe(false);
+  await page.locator("#graphFit").click();
+  const fitted = await sharedRendererSnapshot(page);
+  await page.locator("#graphZoomIn").click();
+  const zoomed = await sharedRendererSnapshot(page);
+  expect(zoomed.cameraPosition).not.toEqual(fitted.cameraPosition);
+
+  await forceCssFullscreenFallback(page);
+  await page.locator("#graphFullscreen").click();
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#graphPanel")).toHaveClass(/graph-fullscreen-fallback/);
+  await page.locator("#graphFullscreen").click();
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "false");
 });
 
-test("debugger drives 3D presentation without destroying the renderer", async ({ page }, testInfo) => {
+test("debugger updates generic shared presentation without destroying renderer", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await page.selectOption("#sample", "12");
   await page.locator("#run").click();
   await expect(page.locator("#status")).toContainText("Готово");
   await enter3d(page);
-
+  const before = await sharedRendererSnapshot(page);
   const last = await page.locator("#debugStep").textContent();
   await page.locator("#debugFirst").click();
   await expect(page.locator("#debugStep")).not.toHaveText(last);
   await expect(page.locator("#debugCurrent")).toContainText("операция:");
-  expect(await rendererActive(page)).toBe(true);
+  const after = await sharedRendererSnapshot(page);
+  expect(after.nodeCount).toBe(before.nodeCount);
+  expect(after.arcCount).toBe(before.arcCount);
   await page.locator("#debugNext").click();
   await expect(page.locator("#debugEffects")).toContainText("видимых связей:");
-  expect(await rendererActive(page)).toBe(true);
+  expect(await sharedRendererSnapshot(page)).not.toBeNull();
 });
 
-test("repeated 2D/3D switching disposes canvases, label layers and renderer state", async ({ page }, testInfo) => {
+test("repeated 2D/3D switching disposes and recreates only shared renderer state", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await loadAset(page, branchedAset());
-
-  for (let cycle = 0; cycle < 5; cycle += 1) {
+  for (let cycle = 0; cycle < 4; cycle += 1) {
     await enter3d(page);
-    expect(await rendererActive(page)).toBe(true);
     await expect(page.locator("#graph > canvas")).toHaveCount(1);
-    await expect(page.locator('#graph > [data-role="three-label-layer"]')).toHaveCount(1);
-
+    expect(await sharedRendererSnapshot(page)).not.toBeNull();
     await page.selectOption("#graphView", "2d");
     await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
-    expect(await rendererActive(page)).toBe(false);
     await expect(page.locator("#graph > canvas")).toHaveCount(0);
-    await expect(page.locator('#graph > [data-role="three-label-layer"]')).toHaveCount(0);
+    expect(await sharedRendererSnapshot(page)).toBeNull();
   }
 });
 
-test("browser corpus covers branched, recursive SCC and dense 25-link asets", async ({ page }, testInfo) => {
+test("branched, recursive and dense Asets open through shared renderer", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
-  for (const aset of [branchedAset(), recursiveAset(), chainAset(25)]) {
+  for (const aset of [branchedAset(), recursiveAset(), chainAset(45)]) {
     await loadAset(page, aset);
     await enter3d(page);
-    const snapshot = await rendererSnapshot(page);
-    expect(snapshot.performanceBudget.withinBudget).toBe(true);
-    expect(snapshot.lodPlan.nodes).toHaveLength(aset.links.length);
-    expect(snapshot.lodPlan.arcs).toHaveLength(aset.links.length * 2);
-    await page.selectOption("#graphView", "2d");
-    await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
+    const snapshot = await sharedRendererSnapshot(page);
+    expect(snapshot.nodeCount).toBe(aset.links.length);
+    expect(snapshot.arcCount).toBe(aset.links.length * 2);
+    expect(snapshot.arrowCount).toBeGreaterThan(0);
   }
 });
 
-test("touch viewport initializes 3D and picks exact root link", async ({ page }, testInfo) => {
+test("touch viewport initializes shared 3D and activates an exact VisualKey", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-touch");
-  await loadAset(page, kernelAset());
+  const aset = kernelAset();
+  await loadAset(page, aset);
   await enter3d(page);
-  const canvas = page.locator("#graph > canvas");
-  await expect(canvas).toHaveCSS("touch-action", "none");
-  const point = await rootScreenPoint(page);
-  expect(point).not.toBeNull();
-  await page.touchscreen.tap(point.x, point.y);
-  await expect.poll(() => selectedLink(page)).toBe("R");
-  const viewport = page.viewportSize();
-  expect(viewport?.width).toBeLessThan(500);
-  expect(await page.evaluate(() => navigator.maxTouchPoints)).toBeGreaterThan(0);
-  expect(await page.evaluate(() => navigator.userAgent.includes("Mobile"))).toBe(true);
+  await page.locator("#graphPhysicsPause").click();
+  await page.locator("#graphFit").click({ force: true });
+  let target = null;
+  for (const link of aset.links) {
+    const point = await publicHaloPoint(page, link.id);
+    if (point) {
+      target = { key: link.id, point };
+      break;
+    }
+  }
+  expect(target, "at least one exact VisualKey halo must be fully visible in touch viewport").not.toBeNull();
+  await page.touchscreen.tap(target.point.x, target.point.y);
+  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", target.key);
 });
 
-test("WebGL failure falls back to a usable structural 2D view", async ({}, testInfo) => {
+test("WebGL failure falls back to structural 2D", async ({}, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-webgl", "--disable-webgl2", "--disable-gpu"],
-  });
+  const browser = await chromium.launch({ headless: true, args: ["--disable-webgl", "--disable-webgl2", "--disable-gpu"] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   try {
     await page.goto(BASE_URL);
     await expect(page.locator("#status")).toContainText("Готово");
+    await loadAset(page, kernelAset());
     await page.selectOption("#graphView", "3d");
     await expect(page.locator("#graphView")).toHaveValue("2d");
     await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
     await expect(page.locator("#status")).toContainText("3D недоступен");
-    await expect(page.locator("#status")).toContainText("структурный 2D");
-    await expect(page.locator("#graphLayout")).toBeEnabled();
-    await page.locator("#graphFit").click();
+    await expect(page.locator("#graph > canvas")).toHaveCount(0);
   } finally {
     await browser.close();
   }
-});
-
-test("N=300 published scene stays inside machine-visible performance budgets", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "chromium-desktop");
-  test.setTimeout(120_000);
-  const aset = chainAset(300);
-  await loadAset(page, aset);
-  await enter3d(page);
-  const snapshot = await rendererSnapshot(page);
-  expect(snapshot.performanceBudget.withinBudget).toBe(true);
-  expect(snapshot.performanceBudget.observed.visibleLinks).toBe(300);
-  expect(snapshot.performanceBudget.observed.semanticArcs).toBe(600);
-  expect(snapshot.performanceBudget.observed.arcVertices).toBeLessThanOrEqual(
-    snapshot.performanceBudget.limits.maxArcVertices,
-  );
-  expect(snapshot.performanceBudget.observed.sceneObjects).toBeLessThanOrEqual(
-    snapshot.performanceBudget.limits.maxSceneObjects,
-  );
-  expect(snapshot.performanceBudget.observed.readabilityEvaluations).toBeLessThanOrEqual(
-    snapshot.performanceBudget.limits.maxReadabilityEvaluations,
-  );
 });

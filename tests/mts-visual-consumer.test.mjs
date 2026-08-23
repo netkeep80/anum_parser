@@ -5,8 +5,13 @@ import test from "node:test";
 import {
   normalizeVisualLinkNetwork,
   validateVisualLinkNetwork,
+  validateVisualPresentationState,
 } from "../generated/mts-visual/index.js";
-import { projectAsetToVisualLinkNetwork } from "../src/mts-visual-adapter.js";
+import {
+  projectAsetToVisualLinkNetwork,
+  projectParserVisualPresentation,
+  projectReadableLayoutToPhysics3DState,
+} from "../src/mts-visual-adapter.js";
 
 const EXPECTED_VISUAL_REPOSITORY = "netkeep80/mts_visual";
 const EXPECTED_VISUAL_COMMIT = "6722702cb4bb6948e890135c85bc9d778c8cd571";
@@ -89,8 +94,12 @@ test("materialized @mts/visual exposes public root and three entries", async () 
   assert.equal(typeof root.normalizeVisualLinkNetwork, "function");
   assert.equal(typeof root.validateVisualLinkNetwork, "function");
   assert.equal(typeof root.createLivePhysics3D, "function");
+  assert.equal(typeof root.setLivePhysics3DOptions, "function");
+  assert.equal(typeof root.snapshotLivePhysics3D, "function");
   assert.equal(typeof three.createVisualThreeLiveRenderer, "function");
-  assert.equal(typeof three.setVisualThreeLivePhysicsOptions, "function");
+  assert.equal(typeof three.setVisualThreeLivePaused, "function");
+  assert.equal(typeof three.setVisualThreePresentation, "function");
+  assert.equal(typeof three.getVisualThreeRendererSnapshot, "function");
 });
 
 test("Aset adapter preserves exact kernel topology and presentation-only metadata", () => {
@@ -146,5 +155,120 @@ test("input order and parser-only provenance do not alter normalized shared topo
   assert.deepEqual(
     topology(projectAsetToVisualLinkNetwork(a)),
     topology(projectAsetToVisualLinkNetwork(b)),
+  );
+});
+
+test("parser debug roles map only into generic shared presentation fields", () => {
+  const aset = kernelAset();
+  const network = projectAsetToVisualLinkNetwork(aset);
+  const beforeAset = JSON.stringify(aset);
+  const beforeNetwork = JSON.stringify(network);
+  const presentation = projectParserVisualPresentation(network, {
+    visibleLinkIds: ["R", "L", "ghost"],
+    producedLinks: ["L", "ghost"],
+    reusedLinks: ["O", "ghost"],
+    current: "R",
+  }, "L");
+  validateVisualPresentationState(network, presentation);
+  const byKey = new Map(presentation.links.map((entry) => [entry.key, entry]));
+
+  assert.deepEqual([...byKey.keys()], ["C", "L", "O", "R", "U"]);
+  assert.deepEqual(byKey.get("R"), {
+    key: "R",
+    visible: true,
+    emphasis: 1.35,
+    labelVisible: true,
+    halo: { color: 0xffd166, scale: 1.55, opacity: 0.32 },
+  });
+  assert.deepEqual(byKey.get("L"), {
+    key: "L",
+    visible: true,
+    emphasis: 1.25,
+    selected: true,
+    labelVisible: true,
+    halo: { color: 0xffffff, scale: 1.55, opacity: 0.28 },
+  });
+  assert.deepEqual(byKey.get("O"), {
+    key: "O",
+    visible: false,
+    halo: { color: 0x73a7ff, scale: 1.55, opacity: 0.22 },
+  });
+  assert.deepEqual(byKey.get("C"), { key: "C", visible: false });
+  assert.deepEqual(byKey.get("U"), { key: "U", visible: false });
+  assert.equal(presentation.links.some((entry) => entry.key === "ghost"), false);
+  assert.equal(JSON.stringify(aset), beforeAset);
+  assert.equal(JSON.stringify(network), beforeNetwork);
+});
+
+test("readable-layout bridge creates immutable complete shared Physics3DState seed", () => {
+  const aset = kernelAset();
+  const network = projectAsetToVisualLinkNetwork(aset);
+  const readable = {
+    positions: {
+      R: { x: 0, y: 0, z: 0 },
+      O: { x: 1, y: 0, z: 0 },
+      C: { x: -1, y: 0, z: 0 },
+      L: { x: 0, y: 1, z: 0 },
+      U: { x: 0, y: -1, z: 0 },
+    },
+  };
+  const beforeAset = JSON.stringify(aset);
+  const beforeNetwork = JSON.stringify(network);
+  const beforeReadable = JSON.stringify(readable);
+  const seed = projectReadableLayoutToPhysics3DState(network, readable);
+
+  assert.deepEqual(seed.positions.map((entry) => entry.key), ["C", "L", "O", "R", "U"]);
+  assert.deepEqual(seed.velocities.map((entry) => entry.key), ["C", "L", "O", "R", "U"]);
+  assert.deepEqual(
+    seed.positions.find((entry) => entry.key === "R"),
+    { key: "R", point: { x: 0, y: 0, z: 0 } },
+  );
+  assert.equal(seed.velocities.every((entry) => (
+    entry.vector.x === 0 && entry.vector.y === 0 && entry.vector.z === 0
+  )), true);
+  assert.equal("pinnedKeys" in seed, false, "seed must not encode a root or any other pin");
+  assert.equal(Object.isFrozen(seed), true);
+  assert.equal(Object.isFrozen(seed.positions), true);
+  assert.equal(Object.isFrozen(seed.velocities), true);
+  assert.equal(JSON.stringify(aset), beforeAset);
+  assert.equal(JSON.stringify(network), beforeNetwork);
+  assert.equal(JSON.stringify(readable), beforeReadable);
+});
+
+test("readable-layout bridge fails closed on missing or non-finite positions", () => {
+  const network = projectAsetToVisualLinkNetwork(kernelAset());
+  assert.throws(
+    () => projectReadableLayoutToPhysics3DState(network, { positions: { R: { x: 0, y: 0, z: 0 } } }),
+    /missing readable position/i,
+  );
+  const positions = Object.fromEntries(network.links.map(({ key }) => [key, { x: 0, y: 0, z: 0 }]));
+  positions.L = { x: Number.NaN, y: 0, z: 0 };
+  assert.throws(
+    () => projectReadableLayoutToPhysics3DState(network, { positions }),
+    /non-finite readable position/i,
+  );
+});
+
+test("production app delegates 3D authority to standalone @mts/visual", () => {
+  const source = readFileSync("src/app.js", "utf8");
+  assert.match(
+    source,
+    /from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
+    "production app must import standalone @mts/visual root",
+  );
+  assert.match(
+    source,
+    /from\s+["']\.\.\/generated\/mts-visual\/three\/index\.js["']/,
+    "production app must import standalone @mts/visual/three",
+  );
+  assert.doesNotMatch(
+    source,
+    /from\s+["']\.\/three-renderer\.js["']/,
+    "production app must not import the legacy local Three renderer",
+  );
+  assert.doesNotMatch(
+    source,
+    /from\s+["']\.\/live-physics3d\.js["']/,
+    "production app must not import the legacy local live solver",
   );
 });

@@ -1,20 +1,25 @@
 import { detectFormat, downloadText, parseArtifact, readUtf8File } from "./formats.js";
 import { availableDeserializers, deserializerById } from "./deserializers.js";
 import { availableSerializers, serializerById } from "./serializers.js";
-import { DEFAULT_PHYSICS3D_OPTIONS } from "./physics3d.js";
+import {
+  createLivePhysics3D,
+  setLivePhysics3DOptions,
+} from "../generated/mts-visual/index.js";
+import {
+  createVisualThreeLiveRenderer,
+  destroyVisualThreeRenderer,
+  fitVisualThreeRenderer,
+  resizeVisualThreeRenderer,
+  setVisualThreeLivePaused,
+  setVisualThreePresentation,
+  zoomVisualThreeRenderer,
+} from "../generated/mts-visual/three/index.js";
 import { solveReadableLayout3d } from "./readable-layout3d.js";
 import {
-  create3dRenderer,
-  destroy3dRenderer,
-  fit3dRenderer,
-  reset3dLivePhysics,
-  resize3dRenderer,
-  set3dDebugState,
-  set3dLivePhysicsOptions,
-  set3dLivePhysicsPaused,
-  set3dSelectedLink,
-  zoom3dRenderer,
-} from "./three-renderer.js";
+  projectAsetToVisualLinkNetwork,
+  projectParserVisualPresentation,
+  projectReadableLayoutToPhysics3DState,
+} from "./mts-visual-adapter.js";
 import {
   createBlueprintRenderer,
   destroyBlueprintRenderer,
@@ -43,14 +48,17 @@ const state = {
   debugStep: 0,
   graphView: "2d",
   visualModel: null,
+  visualNetwork: null,
   physicalState: null,
+  visualInitialState: null,
+  visualLiveController: null,
   blueprintPositions: null,
   selectedLinkId: null,
   graphWarning: null,
   physicsOptions: {
-    charge: DEFAULT_PHYSICS3D_OPTIONS.charge,
-    springStiffness: DEFAULT_PHYSICS3D_OPTIONS.springStiffness,
-    damping: DEFAULT_PHYSICS3D_OPTIONS.damping,
+    charge: 1,
+    springStiffness: 0.055,
+    damping: 0.86,
   },
   physicsPaused: false,
   fullscreenFallback: false,
@@ -222,9 +230,13 @@ function render() {
   renderTrace(trace);
   renderComparison();
   state.visualModel = buildVisualModel(aset);
+  state.visualNetwork = projectAsetToVisualLinkNetwork(aset);
   state.physicalState = null;
+  state.visualInitialState = null;
+  state.visualLiveController = null;
   state.blueprintPositions = null;
   state.selectedLinkId = null;
+  delete ui.graph.dataset.selectedLink;
   renderGraph();
   renderDebugger();
   refreshSerializers();
@@ -251,10 +263,40 @@ function captureBlueprintPositions() {
   if (snapshot?.positions) state.blueprintPositions = snapshot.positions;
 }
 
+function ensureShared3dController() {
+  state.visualNetwork ??= projectAsetToVisualLinkNetwork(state.result?.aset);
+  state.physicalState ??= solveReadableLayout3d(state.visualModel);
+  state.visualInitialState ??= projectReadableLayoutToPhysics3DState(
+    state.visualNetwork,
+    state.physicalState,
+  );
+  state.visualLiveController ??= createLivePhysics3D(
+    state.visualNetwork,
+    state.visualInitialState,
+    state.physicsOptions,
+  );
+  return state.visualLiveController;
+}
+
+function applyShared3dPresentation() {
+  if (state.graphView !== "3d" || !state.visualNetwork) return false;
+  if (state.selectedLinkId) ui.graph.dataset.selectedLink = state.selectedLinkId;
+  else delete ui.graph.dataset.selectedLink;
+  return setVisualThreePresentation(
+    ui.graph,
+    projectParserVisualPresentation(
+      state.visualNetwork,
+      currentDebugState(),
+      state.selectedLinkId,
+    ),
+  );
+}
+
 function renderGraph() {
   const aset = state.result?.aset;
   if (!aset) return;
   state.visualModel ??= buildVisualModel(aset);
+  state.visualNetwork ??= projectAsetToVisualLinkNetwork(aset);
   state.graphWarning = null;
 
   if (state.graphView === "3d") {
@@ -262,20 +304,19 @@ function renderGraph() {
       captureBlueprintPositions();
       destroyBlueprintRenderer(ui.graph);
       destroyGraph(ui.graph);
-      state.physicalState ??= solveReadableLayout3d(state.visualModel);
-      create3dRenderer(ui.graph, state.visualModel, state.physicalState, {
-        physics: state.physicsOptions,
-        debugState: currentDebugState(),
-        selectedLinkId: state.selectedLinkId,
-        onSelectLink: (linkId) => {
-          state.selectedLinkId = linkId;
+      const controller = ensureShared3dController();
+      createVisualThreeLiveRenderer(ui.graph, state.visualNetwork, controller, {
+        onActivateKey: (key) => {
+          state.selectedLinkId = key;
+          ui.graph.dataset.selectedLink = key;
+          applyShared3dPresentation();
         },
       });
-      set3dSelectedLink(ui.graph, state.selectedLinkId);
-      set3dLivePhysicsPaused(ui.graph, state.physicsPaused);
+      applyShared3dPresentation();
+      setVisualThreeLivePaused(ui.graph, state.physicsPaused);
     } catch (error) {
       console.warn("3D renderer unavailable; falling back to structural 2D", error);
-      destroy3dRenderer(ui.graph);
+      destroyVisualThreeRenderer(ui.graph);
       state.graphView = "2d";
       if (graphIsFullscreen()) void exitGraphFullscreen();
       state.graphWarning = `3D недоступен: ${error?.message ?? error}. Включён структурный 2D.`;
@@ -285,7 +326,7 @@ function renderGraph() {
       });
     }
   } else if (state.graphView === "blueprint") {
-    destroy3dRenderer(ui.graph);
+    destroyVisualThreeRenderer(ui.graph);
     destroyGraph(ui.graph);
     createBlueprintRenderer(ui.graph, state.visualModel, {
       positions: state.blueprintPositions,
@@ -299,7 +340,7 @@ function renderGraph() {
   } else {
     captureBlueprintPositions();
     destroyBlueprintRenderer(ui.graph);
-    destroy3dRenderer(ui.graph);
+    destroyVisualThreeRenderer(ui.graph);
     renderAset(ui.graph, aset, {
       layout: ui.graphLayout.value,
       visualModel: state.visualModel,
@@ -342,20 +383,29 @@ function changePhysicsOption(key, input) {
   const value = Number(input.value);
   if (!Number.isFinite(value)) return;
   state.physicsOptions = { ...state.physicsOptions, [key]: value };
-  if (state.graphView === "3d") set3dLivePhysicsOptions(ui.graph, { [key]: value });
+  if (state.visualLiveController) {
+    setLivePhysics3DOptions(state.visualLiveController, { [key]: value });
+    if (state.graphView === "3d") setVisualThreeLivePaused(ui.graph, state.physicsPaused);
+  }
   renderPhysicsControls();
 }
 
 function togglePhysicsPause() {
   if (state.graphView !== "3d") return;
   state.physicsPaused = !state.physicsPaused;
-  set3dLivePhysicsPaused(ui.graph, state.physicsPaused);
+  setVisualThreeLivePaused(ui.graph, state.physicsPaused);
   renderPhysicsControls();
 }
 
 function resetCurrentPhysics() {
-  if (state.graphView !== "3d") return;
-  reset3dLivePhysics(ui.graph);
+  if (state.graphView !== "3d" || !state.visualNetwork || !state.visualInitialState) return;
+  state.visualLiveController = createLivePhysics3D(
+    state.visualNetwork,
+    state.visualInitialState,
+    state.physicsOptions,
+  );
+  renderGraph();
+  renderDebugger();
   renderPhysicsControls();
 }
 
@@ -365,7 +415,7 @@ function graphIsFullscreen() {
 
 function schedule3dResize() {
   if (state.graphView !== "3d") return;
-  const resize = () => resize3dRenderer(ui.graph);
+  const resize = () => resizeVisualThreeRenderer(ui.graph);
   if (typeof globalThis.requestAnimationFrame === "function") {
     globalThis.requestAnimationFrame(resize);
   } else {
@@ -445,13 +495,13 @@ function handleFullscreenEscape(event) {
 }
 
 function fitCurrentGraph() {
-  if (state.graphView === "3d") fit3dRenderer(ui.graph);
+  if (state.graphView === "3d") fitVisualThreeRenderer(ui.graph);
   else if (state.graphView === "blueprint") fitBlueprintRenderer(ui.graph);
   else fitGraph(ui.graph);
 }
 
 function zoomCurrentGraph(factor) {
-  if (state.graphView === "3d") zoom3dRenderer(ui.graph, factor);
+  if (state.graphView === "3d") zoomVisualThreeRenderer(ui.graph, factor);
   else if (state.graphView === "blueprint") zoomBlueprintRenderer(ui.graph, factor);
   else zoomGraph(ui.graph, factor);
 }
@@ -498,7 +548,7 @@ function renderDebugger() {
     ui.debugCurrent.textContent = "Для импортированной асети пошагового состояния нет.";
     ui.debugStack.replaceChildren(textNode("Стек недоступен для этого входа."));
     ui.debugEffects.textContent = "—";
-    if (state.graphView === "3d") set3dDebugState(ui.graph, null);
+    if (state.graphView === "3d") applyShared3dPresentation();
     else if (state.graphView === "blueprint") setBlueprintDebugState(ui.graph, null);
     else setGraphDebugState(ui.graph, null);
     updateTraceSelection();
@@ -524,7 +574,7 @@ function renderDebugger() {
     `добавлено: ${(item.producedLinks ?? []).join(", ") || "—"}`,
     `переиспользовано: ${(item.reusedLinks ?? []).join(", ") || "—"}`,
   ].join("\n");
-  if (state.graphView === "3d") set3dDebugState(ui.graph, item);
+  if (state.graphView === "3d") applyShared3dPresentation();
   else if (state.graphView === "blueprint") setBlueprintDebugState(ui.graph, item);
   else setGraphDebugState(ui.graph, item);
   updateTraceSelection();
