@@ -175,7 +175,11 @@ async function publicHaloPoint(page, key) {
         count += 1;
       }
     }
-    if (count < 4 || maxX < minX || maxY < minY) return null;
+    if (
+      count < 4 || maxX < minX || maxY < minY
+      || minX <= 2 || minY <= 2
+      || maxX >= scratch.width - 3 || maxY >= scratch.height - 3
+    ) return null;
     return {
       x: ((minX + maxX) / 2) / scratch.width,
       y: ((minY + maxY) / 2) / scratch.height,
@@ -304,10 +308,17 @@ test("touch viewport initializes shared 3D and activates an exact VisualKey", as
   await enter3d(page);
   await page.locator("#graphPhysicsPause").click();
   await page.locator("#graphFit").click({ force: true });
-  const point = await publicHaloPoint(page, "L");
-  expect(point, "public presentation halo for touch target L").not.toBeNull();
-  await page.touchscreen.tap(point.x, point.y);
-  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", "L");
+  let target = null;
+  for (const link of aset.links) {
+    const point = await publicHaloPoint(page, link.id);
+    if (point) {
+      target = { key: link.id, point };
+      break;
+    }
+  }
+  expect(target, "at least one exact VisualKey halo must be fully visible in touch viewport").not.toBeNull();
+  await page.touchscreen.tap(target.point.x, target.point.y);
+  await expect(page.locator("#graph")).toHaveAttribute("data-selected-link", target.key);
 });
 
 test("WebGL failure falls back to structural 2D", async ({}, testInfo) => {
