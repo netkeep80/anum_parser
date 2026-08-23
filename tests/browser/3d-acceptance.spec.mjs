@@ -129,9 +129,9 @@ async function semanticPixelCounts(page, pngBuffer) {
 
 async function visualCenterCandidates(page) {
   const canvas = page.locator("#graph > canvas");
+  const png = await canvas.screenshot();
   const box = await canvas.boundingBox();
   if (!box) return [];
-  const png = await canvas.screenshot();
   const dataUrl = `data:image/png;base64,${png.toString("base64")}`;
   const relative = await page.evaluate(async (url) => {
     const image = new Image();
