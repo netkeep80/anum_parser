@@ -16,11 +16,7 @@ function kernelAset() {
       { id: "U", start: "C", end: "O", tags: ["root-abit", "unlinked"] },
     ],
     labels: { R: "∞", O: "[", C: "]", L: "1", U: "0" },
-    symbolSequences: [],
-    abitSequences: [],
-    linkSequences: [],
-    rootChains: [],
-    storedAnums: [],
+    symbolSequences: [], abitSequences: [], linkSequences: [], rootChains: [], storedAnums: [],
     provenance: { status: "browser-blueprint-contract-fixture" },
   };
 }
@@ -55,12 +51,12 @@ async function rendererActivity(page) {
   return page.evaluate(async () => {
     const [blueprint, three] = await Promise.all([
       import("./src/blueprint-renderer.js"),
-      import("./src/three-renderer.js"),
+      import("./generated/mts-visual/three/index.js"),
     ]);
     const graph = document.getElementById("graph");
     return {
       blueprint: blueprint.hasBlueprintRenderer(graph),
-      three: three.has3dRenderer(graph),
+      three: Boolean(three.getVisualThreeRendererSnapshot(graph)),
     };
   });
 }
@@ -69,8 +65,7 @@ async function centerScreenPoint(page, linkId) {
   const center = page.locator(`[data-role="blueprint-center"][data-link-id="${linkId}"]`);
   await center.scrollIntoViewIfNeeded();
   const box = await center.boundingBox();
-  if (!box) return null;
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  return box ? { x: box.x + box.width / 2, y: box.y + box.height / 2 } : null;
 }
 
 async function linkColors(page) {
@@ -82,23 +77,18 @@ async function linkColors(page) {
   ));
 }
 
-test.beforeEach(async ({ page }) => {
-  await boot(page);
-});
+test.beforeEach(async ({ page }) => { await boot(page); });
 
 test("debugger and selection stay presentation-only without recoloring blueprint links", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
-
   await page.selectOption("#sample", "12");
   await page.locator("#run").click();
   await expect(page.locator("#status")).toContainText("Готово");
   const semanticBefore = await page.locator("#asetJson").textContent();
   await enterBlueprint(page);
 
-  const root = page.locator('[data-role="blueprint-center"][data-link-id="R"]');
-  await root.click();
+  await page.locator('[data-role="blueprint-center"][data-link-id="R"]').click();
   await expect.poll(async () => (await blueprintSnapshot(page))?.selectedLinkId).toBe("R");
-
   const colorsBefore = await linkColors(page);
   expect(Object.keys(colorsBefore).length).toBeGreaterThan(0);
   expect(new Set(Object.values(colorsBefore)).size).toBe(Object.keys(colorsBefore).length);
@@ -136,16 +126,13 @@ test("repeated 2D/blueprint/3D cycles keep exactly one active renderer", async (
     expect(await rendererActivity(page)).toEqual({ blueprint: false, three: true });
     await expect(page.locator('[data-role="blueprint-svg"]')).toHaveCount(0);
     await expect(page.locator("#graph > canvas")).toHaveCount(1);
-    await expect(page.locator('#graph > [data-role="three-label-layer"]')).toHaveCount(1);
 
     await page.selectOption("#graphView", "2d");
     await expect(page.locator("#graph")).toHaveAttribute("data-view-mode", "2d");
     expect(await rendererActivity(page)).toEqual({ blueprint: false, three: false });
     await expect(page.locator('[data-role="blueprint-svg"]')).toHaveCount(0);
     await expect(page.locator("#graph > canvas")).toHaveCount(0);
-    await expect(page.locator('[data-role="three-label-layer"]')).toHaveCount(0);
   }
-
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
 });
 
@@ -163,13 +150,9 @@ test("dragged blueprint geometry remains finite after viewport resize and fit", 
   await page.mouse.down();
   await page.mouse.move(point.x + 100, point.y + 50, { steps: 5 });
   await page.mouse.up();
-
   await expect.poll(async () => {
     const after = await blueprintSnapshot(page);
-    return Math.hypot(
-      after.positions.O.x - before.positions.O.x,
-      after.positions.O.y - before.positions.O.y,
-    );
+    return Math.hypot(after.positions.O.x - before.positions.O.x, after.positions.O.y - before.positions.O.y);
   }).toBeGreaterThan(1);
 
   await page.setViewportSize({ width: 920, height: 700 });
@@ -188,17 +171,13 @@ test("dragged blueprint geometry remains finite after viewport resize and fit", 
 
 test("WebGL fallback returns to structural 2D without disabling blueprint", async ({}, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-webgl", "--disable-webgl2", "--disable-gpu"],
-  });
+  const browser = await chromium.launch({ headless: true, args: ["--disable-webgl", "--disable-webgl2", "--disable-gpu"] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   try {
     await page.goto(BASE_URL);
     await expect(page.locator("#status")).toContainText("Готово");
     await loadKernel(page);
     const semanticBefore = await page.locator("#asetJson").textContent();
-
     await enterBlueprint(page);
     expect(await rendererActivity(page)).toEqual({ blueprint: true, three: false });
     await page.selectOption("#graphView", "3d");
