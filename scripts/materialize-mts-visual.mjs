@@ -101,7 +101,7 @@ assert.equal(lock.channel, "accepted-presentation");
 assert.match(lock.commit, /^[0-9a-f]{40}$/);
 assert.equal(lock.repository, "netkeep80/mts_visual");
 assert.equal(lock.package.name, "@mts/visual");
-assert.equal(lock.package.version, "0.1.0");
+assert.match(lock.package.version, /^\d+\.\d+\.\d+$/);
 assert.equal(lock.package.root, ".");
 assert.equal(lock.package.dependencies.three, "0.185.1");
 assert.equal(lock.authority.floatingRefAllowed, false);
@@ -144,6 +144,7 @@ try {
   assert.equal(manifest.devDependencies?.typescript, "5.9.3");
   assert.equal(packageLock.name, lock.package.name);
   assert.equal(packageLock.version, lock.package.version);
+  assert.equal(packageLock.packages?.[""]?.version, lock.package.version);
   assert.equal(packageLock.lockfileVersion, lock.package.lockfile.lockfileVersion);
   assert.equal(packageLock.packages?.[""]?.dependencies?.three, lock.package.dependencies.three);
   assert.equal(packageLock.packages?.[""]?.devDependencies?.typescript, "5.9.3");

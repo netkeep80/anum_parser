@@ -2,19 +2,19 @@
   "schema": "anum-parser-mts-visual-consumer-lock/v0.1",
   "channel": "accepted-presentation",
   "repository": "netkeep80/mts_visual",
-  "commit": "6722702cb4bb6948e890135c85bc9d778c8cd571",
+  "commit": "2d76cd29143fa764f4a08d0c0a788ff73c38841c",
   "package": {
     "root": ".",
     "name": "@mts/visual",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "private": true,
     "manifest": {
       "path": "package.json",
-      "gitBlobSha": "b9285f256696f9c5259909ae993e13815be9677d"
+      "gitBlobSha": "f17a2e119cd1e98110b5a36baa8535a435a03ac1"
     },
     "lockfile": {
       "path": "package-lock.json",
-      "gitBlobSha": "dd1800f7a9db83e9555a98268b383871c5f8bbf7",
+      "gitBlobSha": "3446bedebbd0bbc00b676f97050083d17f02107b",
       "lockfileVersion": 3
     },
     "dependencies": {

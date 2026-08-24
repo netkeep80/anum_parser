@@ -10,14 +10,14 @@ import {
 import {
   projectAsetToVisualLinkNetwork,
   projectParserVisualPresentation,
-  projectReadableLayoutToPhysics3DState,
 } from "../src/mts-visual-adapter.js";
 
 const EXPECTED_VISUAL_REPOSITORY = "netkeep80/mts_visual";
-const EXPECTED_VISUAL_COMMIT = "6722702cb4bb6948e890135c85bc9d778c8cd571";
+const EXPECTED_VISUAL_COMMIT = "2d76cd29143fa764f4a08d0c0a788ff73c38841c";
+const EXPECTED_VISUAL_VERSION = "0.2.0";
 const EXPECTED_VISUAL_ROOT = ".";
-const EXPECTED_VISUAL_MANIFEST_BLOB = "b9285f256696f9c5259909ae993e13815be9677d";
-const EXPECTED_VISUAL_LOCKFILE_BLOB = "dd1800f7a9db83e9555a98268b383871c5f8bbf7";
+const EXPECTED_VISUAL_MANIFEST_BLOB = "f17a2e119cd1e98110b5a36baa8535a435a03ac1";
+const EXPECTED_VISUAL_LOCKFILE_BLOB = "3446bedebbd0bbc00b676f97050083d17f02107b";
 const EXPECTED_CORE_COMMIT = "6b7f616c7b275310aebdbe998da13c5811c91391";
 
 function kernelAset(extraLinks = [], labels = {}, extra = {}) {
@@ -62,7 +62,7 @@ test("visual presentation dependency is exact standalone and independent from se
   assert.equal(visualLock.repository, EXPECTED_VISUAL_REPOSITORY);
   assert.equal(visualLock.commit, EXPECTED_VISUAL_COMMIT);
   assert.equal(visualLock.package.name, "@mts/visual");
-  assert.equal(visualLock.package.version, "0.1.0");
+  assert.equal(visualLock.package.version, EXPECTED_VISUAL_VERSION);
   assert.equal(visualLock.package.root, EXPECTED_VISUAL_ROOT);
   assert.equal(visualLock.package.manifest.path, "package.json");
   assert.equal(visualLock.package.manifest.gitBlobSha, EXPECTED_VISUAL_MANIFEST_BLOB);
@@ -88,11 +88,12 @@ test("visual presentation dependency is exact standalone and independent from se
   assert.match(provenance.treeSha256, /^[0-9a-f]{64}$/);
 });
 
-test("materialized @mts/visual exposes public root and three entries", async () => {
+test("materialized @mts/visual exposes accepted public root and three entries", async () => {
   const root = await import("../generated/mts-visual/index.js");
   const three = await import("../generated/mts-visual/three/index.js");
   assert.equal(typeof root.normalizeVisualLinkNetwork, "function");
   assert.equal(typeof root.validateVisualLinkNetwork, "function");
+  assert.equal(typeof root.createInitialPhysics3DState, "function");
   assert.equal(typeof root.createLivePhysics3D, "function");
   assert.equal(typeof root.setLivePhysics3DOptions, "function");
   assert.equal(typeof root.snapshotLivePhysics3D, "function");
@@ -200,80 +201,55 @@ test("parser debug roles map only into generic shared presentation fields", () =
   assert.equal(JSON.stringify(network), beforeNetwork);
 });
 
-test("readable-layout bridge creates immutable complete shared Physics3DState seed", () => {
-  const aset = kernelAset();
-  const network = projectAsetToVisualLinkNetwork(aset);
-  const readable = {
-    positions: {
-      R: { x: 0, y: 0, z: 0 },
-      O: { x: 1, y: 0, z: 0 },
-      C: { x: -1, y: 0, z: 0 },
-      L: { x: 0, y: 1, z: 0 },
-      U: { x: 0, y: -1, z: 0 },
-    },
-  };
-  const beforeAset = JSON.stringify(aset);
-  const beforeNetwork = JSON.stringify(network);
-  const beforeReadable = JSON.stringify(readable);
-  const seed = projectReadableLayoutToPhysics3DState(network, readable);
-
-  assert.deepEqual(seed.positions.map((entry) => entry.key), ["C", "L", "O", "R", "U"]);
-  assert.deepEqual(seed.velocities.map((entry) => entry.key), ["C", "L", "O", "R", "U"]);
-  assert.deepEqual(
-    seed.positions.find((entry) => entry.key === "R"),
-    { key: "R", point: { x: 0, y: 0, z: 0 } },
-  );
-  assert.equal(seed.velocities.every((entry) => (
-    entry.vector.x === 0 && entry.vector.y === 0 && entry.vector.z === 0
-  )), true);
-  assert.equal("pinnedKeys" in seed, false, "seed must not encode a root or any other pin");
-  assert.equal(Object.isFrozen(seed), true);
-  assert.equal(Object.isFrozen(seed.positions), true);
-  assert.equal(Object.isFrozen(seed.velocities), true);
-  assert.equal(JSON.stringify(aset), beforeAset);
-  assert.equal(JSON.stringify(network), beforeNetwork);
-  assert.equal(JSON.stringify(readable), beforeReadable);
-});
-
-test("readable-layout bridge fails closed on missing or non-finite positions", () => {
-  const network = projectAsetToVisualLinkNetwork(kernelAset());
-  assert.throws(
-    () => projectReadableLayoutToPhysics3DState(network, { positions: { R: { x: 0, y: 0, z: 0 } } }),
-    /missing readable position/i,
-  );
-  const positions = Object.fromEntries(network.links.map(({ key }) => [key, { x: 0, y: 0, z: 0 }]));
-  positions.L = { x: Number.NaN, y: 0, z: 0 };
-  assert.throws(
-    () => projectReadableLayoutToPhysics3DState(network, { positions }),
-    /non-finite readable position/i,
-  );
-});
-
-test("production app delegates 3D authority to standalone @mts/visual", () => {
+test("production app delegates initial and live 3D authority to accepted standalone @mts/visual", () => {
   const source = readFileSync("src/app.js", "utf8");
+  const adapter = readFileSync("src/mts-visual-adapter.js", "utf8");
+  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+  const materializer = readFileSync("scripts/materialize-mts-visual.mjs", "utf8");
+
   assert.match(
     source,
-    /from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
-    "production app must import standalone @mts/visual root",
+    /createInitialPhysics3DState[\s\S]*from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
+    "production app must import shared initial-state API from standalone root",
   );
   assert.match(
     source,
     /from\s+["']\.\.\/generated\/mts-visual\/three\/index\.js["']/,
     "production app must import standalone @mts/visual/three",
   );
+  assert.doesNotMatch(source, /from\s+["']\.\/readable-layout3d\.js["']/);
+  assert.doesNotMatch(source, /solveReadableLayout3d/);
+  assert.doesNotMatch(source, /projectReadableLayoutToPhysics3DState/);
   assert.doesNotMatch(
     source,
-    /from\s+["']\.\/three-renderer\.js["']/,
-    "production app must not import the legacy local Three renderer",
+    /physicalState/,
+    "production app must not retain parser-local physical seed state",
+  );
+  assert.doesNotMatch(adapter, /projectReadableLayoutToPhysics3DState/);
+  assert.doesNotMatch(
+    materializer,
+    /assert\.equal\(\s*lock\.package\.version\s*,\s*["']0\.1\.0["']\s*\)/,
+    "visual materializer must follow the exact pinned lock version instead of historical 0.1.0",
   );
   assert.doesNotMatch(
-    source,
-    /from\s+["']\.\/live-physics3d\.js["']/,
-    "production app must not import the legacy local live solver",
+    pkg.scripts.check,
+    /src\/(?:geometry3d|physics3d|readability3d|readable-layout3d)\.js/,
+    "syntax check must not reference deleted local seed authority",
   );
 });
 
-test("obsolete downstream Three/live authority is physically absent", () => {
-  assert.equal(existsSync("src/three-renderer.js"), false, "legacy local Three renderer must be deleted");
-  assert.equal(existsSync("src/live-physics3d.js"), false, "legacy local live solver must be deleted");
+test("obsolete downstream 3D authority is physically absent", () => {
+  for (const path of [
+    "src/three-renderer.js",
+    "src/live-physics3d.js",
+    "src/geometry3d.js",
+    "src/physics3d.js",
+    "src/readability3d.js",
+    "src/readable-layout3d.js",
+    "tests/geometry3d.test.mjs",
+    "tests/physics3d.test.mjs",
+    "tests/readability3d.test.mjs",
+  ]) {
+    assert.equal(existsSync(path), false, `${path} must be deleted`);
+  }
 });

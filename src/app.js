@@ -2,6 +2,7 @@ import { detectFormat, downloadText, parseArtifact, readUtf8File } from "./forma
 import { availableDeserializers, deserializerById } from "./deserializers.js";
 import { availableSerializers, serializerById } from "./serializers.js";
 import {
+  createInitialPhysics3DState,
   createLivePhysics3D,
   setLivePhysics3DOptions,
 } from "../generated/mts-visual/index.js";
@@ -14,11 +15,9 @@ import {
   setVisualThreePresentation,
   zoomVisualThreeRenderer,
 } from "../generated/mts-visual/three/index.js";
-import { solveReadableLayout3d } from "./readable-layout3d.js";
 import {
   projectAsetToVisualLinkNetwork,
   projectParserVisualPresentation,
-  projectReadableLayoutToPhysics3DState,
 } from "./mts-visual-adapter.js";
 import {
   createBlueprintRenderer,
@@ -49,7 +48,6 @@ const state = {
   graphView: "2d",
   visualModel: null,
   visualNetwork: null,
-  physicalState: null,
   visualInitialState: null,
   visualLiveController: null,
   blueprintPositions: null,
@@ -231,7 +229,6 @@ function render() {
   renderComparison();
   state.visualModel = buildVisualModel(aset);
   state.visualNetwork = projectAsetToVisualLinkNetwork(aset);
-  state.physicalState = null;
   state.visualInitialState = null;
   state.visualLiveController = null;
   state.blueprintPositions = null;
@@ -265,11 +262,7 @@ function captureBlueprintPositions() {
 
 function ensureShared3dController() {
   state.visualNetwork ??= projectAsetToVisualLinkNetwork(state.result?.aset);
-  state.physicalState ??= solveReadableLayout3d(state.visualModel);
-  state.visualInitialState ??= projectReadableLayoutToPhysics3DState(
-    state.visualNetwork,
-    state.physicalState,
-  );
+  state.visualInitialState ??= createInitialPhysics3DState(state.visualNetwork);
   state.visualLiveController ??= createLivePhysics3D(
     state.visualNetwork,
     state.visualInitialState,
