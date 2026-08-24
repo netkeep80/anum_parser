@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -271,4 +271,9 @@ test("production app delegates 3D authority to standalone @mts/visual", () => {
     /from\s+["']\.\/live-physics3d\.js["']/,
     "production app must not import the legacy local live solver",
   );
+});
+
+test("obsolete downstream Three/live authority is physically absent", () => {
+  assert.equal(existsSync("src/three-renderer.js"), false, "legacy local Three renderer must be deleted");
+  assert.equal(existsSync("src/live-physics3d.js"), false, "legacy local live solver must be deleted");
 });
