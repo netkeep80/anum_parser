@@ -144,6 +144,11 @@ test("app держит local visualModel ленивым blueprint-only bridge", 
     /function\s+ensureBlueprintVisualModel\(aset[^)]*\)[\s\S]*?state\.visualModel\s*\?\?=\s*buildVisualModel\(aset\)/,
     "local visualModel may survive only behind an explicit blueprint bridge",
   );
+  assert.equal(
+    source.match(/\bbuildVisualModel\s*\(/g)?.length ?? 0,
+    1,
+    "production app must keep exactly one local visualModel construction site",
+  );
   assert.match(
     source,
     /createBlueprintRenderer\(ui\.graph,\s*ensureBlueprintVisualModel\(aset\),/,
