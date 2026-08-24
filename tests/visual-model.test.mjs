@@ -131,6 +131,36 @@ test("structural 2D production не читает вторую Aset/visualModel t
   );
 });
 
+test("app держит local visualModel ленивым blueprint-only bridge", async () => {
+  const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+
+  assert.doesNotMatch(
+    source,
+    /state\.visualModel\s*=\s*buildVisualModel\(aset\)/,
+    "ordinary render must not eagerly build parser-local visual topology",
+  );
+  assert.match(
+    source,
+    /function\s+ensureBlueprintVisualModel\(aset[^)]*\)[\s\S]*?state\.visualModel\s*\?\?=\s*buildVisualModel\(aset\)/,
+    "local visualModel may survive only behind an explicit blueprint bridge",
+  );
+  assert.match(
+    source,
+    /createBlueprintRenderer\(ui\.graph,\s*ensureBlueprintVisualModel\(aset\),/,
+    "blueprint must materialize the temporary local model lazily",
+  );
+  assert.equal(
+    source.match(/visualNetwork:\s*state\.visualNetwork/g)?.length ?? 0,
+    2,
+    "both normal and 3D-fallback structural 2D paths must consume state.visualNetwork",
+  );
+  assert.doesNotMatch(
+    source,
+    /visualModel:\s*state\.visualModel/,
+    "structural 2D must never receive the blueprint-only local model",
+  );
+});
+
 test("legacy Cytoscape facade сохраняет прежнюю link -> pole проекцию", () => {
   const elements = visualModelToCytoscapeElements(
     buildVisualModel(fixture()),
