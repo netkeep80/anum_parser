@@ -71,39 +71,3 @@ export function projectParserVisualPresentation(network, debugState = null, sele
 
   return normalizeVisualPresentationState(normalized, { links });
 }
-
-function immutableReadablePoint(raw, key) {
-  if (raw === null || raw === undefined) {
-    throw new Error(`Missing readable position for VisualKey ${key}`);
-  }
-  if (!Number.isFinite(raw.x) || !Number.isFinite(raw.y) || !Number.isFinite(raw.z)) {
-    throw new Error(`Non-finite readable position for VisualKey ${key}`);
-  }
-  return Object.freeze({ x: raw.x, y: raw.y, z: raw.z });
-}
-
-/**
- * Temporary P2b bridge: the parser-readable layout is consumed once as an
- * initial position seed. The returned shared Physics3DState contains no pin or
- * root metadata; all subsequent motion belongs to @mts/visual V2d/V2e.
- *
- * Delete this bridge in P3 when a consumer-neutral initial-layout strategy is
- * accepted upstream, or when the parser no longer needs the historical seed.
- */
-export function projectReadableLayoutToPhysics3DState(network, readableState) {
-  const normalized = normalizeVisualLinkNetwork(network);
-  const readablePositions = readableState?.positions ?? {};
-  const positions = normalized.links.map(({ key }) => Object.freeze({
-    key,
-    point: immutableReadablePoint(readablePositions[key], key),
-  }));
-  const velocities = normalized.links.map(({ key }) => Object.freeze({
-    key,
-    vector: Object.freeze({ x: 0, y: 0, z: 0 }),
-  }));
-
-  return Object.freeze({
-    positions: Object.freeze(positions),
-    velocities: Object.freeze(velocities),
-  });
-}
