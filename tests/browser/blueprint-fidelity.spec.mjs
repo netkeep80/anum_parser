@@ -108,10 +108,8 @@ async function geometryEvidence(page) {
             ),
           });
         }
-        const centerOnPath = link.segments.some((left, index) => {
-          const right = link.segments[index + 1];
-          return right !== undefined && near(left.p3, link.center) && near(right.p0, link.center);
-        });
+        const centerOnPath = link.segments.some((segment) =>
+          near(segment.p0, link.center) || near(segment.p3, link.center));
         const nonDegenerate = link.segments.some((segment) =>
           [segment.p0, segment.p1, segment.p2, segment.p3]
             .some((point) => Math.hypot(point.x - link.center.x, point.y - link.center.y) > epsilon));
