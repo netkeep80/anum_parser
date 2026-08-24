@@ -97,6 +97,14 @@ test("materialized @mts/visual exposes accepted public root and three entries", 
   assert.equal(typeof root.createLivePhysics3D, "function");
   assert.equal(typeof root.setLivePhysics3DOptions, "function");
   assert.equal(typeof root.snapshotLivePhysics3D, "function");
+  assert.ok(Array.isArray(root.BLUEPRINT_LINK_PALETTE));
+  assert.ok(root.BLUEPRINT_LINK_PALETTE.length > 0);
+  assert.equal(typeof root.blueprintLinkColor, "function");
+  assert.equal(typeof root.createBlueprintViewport, "function");
+  assert.equal(typeof root.fitBlueprintViewport, "function");
+  assert.equal(typeof root.panBlueprintViewport, "function");
+  assert.equal(typeof root.zoomBlueprintViewport, "function");
+  assert.equal(typeof root.blueprintScreenToWorld, "function");
   assert.equal(typeof three.createVisualThreeLiveRenderer, "function");
   assert.equal(typeof three.setVisualThreeLivePaused, "function");
   assert.equal(typeof three.setVisualThreePresentation, "function");
@@ -236,6 +244,24 @@ test("production app delegates initial and live 3D authority to accepted standal
     /src\/(?:geometry3d|physics3d|readability3d|readable-layout3d)\.js/,
     "syntax check must not reference deleted local seed authority",
   );
+});
+
+test("blueprint renderer delegates generic palette and viewport interaction to standalone @mts/visual", () => {
+  const source = readFileSync("src/blueprint-renderer.js", "utf8");
+
+  assert.match(
+    source,
+    /BLUEPRINT_LINK_PALETTE[\s\S]*blueprintLinkColor[\s\S]*createBlueprintViewport[\s\S]*fitBlueprintViewport[\s\S]*panBlueprintViewport[\s\S]*zoomBlueprintViewport[\s\S]*blueprintScreenToWorld[\s\S]*from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
+    "blueprint renderer must import shared palette and viewport interaction from standalone root",
+  );
+  assert.doesNotMatch(source, /const\s+MIN_SCALE\s*=/, "local minimum-scale authority must be removed");
+  assert.doesNotMatch(source, /const\s+MAX_SCALE\s*=/, "local maximum-scale authority must be removed");
+  assert.doesNotMatch(
+    source,
+    /export\s+const\s+BLUEPRINT_LINK_PALETTE\s*=\s*Object\.freeze\s*\(\s*\[/,
+    "local palette literal must not remain presentation authority",
+  );
+  assert.doesNotMatch(source, /function\s+clamp\s*\(/, "local generic viewport clamp must be removed");
 });
 
 test("obsolete downstream 3D authority is physically absent", () => {
