@@ -73,14 +73,18 @@ async function renderedLinkEvidence(page) {
 
 async function geometryEvidence(page) {
   return page.evaluate(async () => {
-    const geometryModule = await import("./src/blueprint-geometry.js");
-    const rendererModule = await import("./src/blueprint-renderer.js");
-    const visualModule = await import("./src/visual-model.js");
+    const [visual, rendererModule, adapterModule] = await Promise.all([
+      import("./generated/mts-visual/index.js"),
+      import("./src/blueprint-renderer.js"),
+      import("./src/mts-visual-adapter.js"),
+    ]);
     const graph = document.getElementById("graph");
     const snapshot = rendererModule.getBlueprintRendererSnapshot(graph);
     const aset = JSON.parse(document.getElementById("asetJson").textContent);
-    const model = visualModule.buildVisualModel(aset);
-    const geometry = geometryModule.buildBlueprintGeometry(model, snapshot.positions);
+    const network = adapterModule.projectAsetToVisualLinkNetwork(aset);
+    const positions = Object.entries(snapshot.positions).map(([key, point]) => ({ key, point }));
+    const geometry = visual.buildBlueprintGeometry(network, positions);
+    const positionByKey = Object.fromEntries(geometry.positions.map(({ key, point }) => [key, point]));
     const epsilon = 1e-7;
     const near = (left, right) => Boolean(left && right) &&
       Math.hypot(left.x - right.x, left.y - right.y) <= epsilon * Math.max(
@@ -90,37 +94,39 @@ async function geometryEvidence(page) {
       );
 
     return {
-      finite: geometryModule.blueprintGeometryIsFinite(geometry),
+      finite: visual.blueprintGeometryIsFinite(geometry),
       links: geometry.links.map((link) => {
         const joints = [];
         for (let index = 0; index < link.segments.length - 1; index += 1) {
           const left = link.segments[index];
           const right = link.segments[index + 1];
           joints.push({
-            pointContinuous: near(left.to, right.from),
+            pointContinuous: near(left.p3, right.p0),
             derivativeContinuous: near(
-              geometryModule.blueprintCubicSegmentDerivativeAtEnd(left),
-              geometryModule.blueprintCubicSegmentDerivativeAtStart(right),
+              visual.blueprintCubicDerivativeAtEnd(left),
+              visual.blueprintCubicDerivativeAtStart(right),
             ),
           });
         }
-        const centerLeft = link.segments[3];
-        const centerRight = link.segments[4];
+        const centerOnPath = link.segments.some((left, index) => {
+          const right = link.segments[index + 1];
+          return right !== undefined && near(left.p3, link.center) && near(right.p0, link.center);
+        });
+        const nonDegenerate = link.segments.some((segment) =>
+          [segment.p0, segment.p1, segment.p2, segment.p3]
+            .some((point) => Math.hypot(point.x - link.center.x, point.y - link.center.y) > epsilon));
         return {
-          id: link.linkId,
+          id: link.key,
           segmentCount: link.segments.length,
-          c1: geometryModule.blueprintSegmentsAreC1(link.segments, epsilon),
+          c1: visual.blueprintSegmentsAreC1(link.segments, epsilon),
           allJointPointsContinuous: joints.every((joint) => joint.pointContinuous),
           allJointDerivativesContinuous: joints.every((joint) => joint.derivativeContinuous),
-          centerPointContinuous: near(centerLeft.to, link.center) && near(centerRight.from, link.center),
-          centerDerivativeContinuous: near(
-            geometryModule.blueprintCubicSegmentDerivativeAtEnd(centerLeft),
-            geometryModule.blueprintCubicSegmentDerivativeAtStart(centerRight),
-          ),
-          startPinned: near(link.startAnchor, snapshot.positions[link.startId]),
-          endPinned: near(link.endAnchor, snapshot.positions[link.endId]),
-          selfStart: link.selfStart,
-          selfEnd: link.selfEnd,
+          centerOnPath,
+          startPinned: near(link.startAnchor, positionByKey[link.startKey]),
+          endPinned: near(link.endAnchor, positionByKey[link.endKey]),
+          selfStart: link.startKey === link.key,
+          selfEnd: link.endKey === link.key,
+          nonDegenerate,
         };
       }),
     };
@@ -145,13 +151,18 @@ test("one semantic link is one colored C1 SVG path with faithful endpoint marker
   await expect(page.locator("#graph defs linearGradient")).toHaveCount(0);
 
   const rendered = await renderedLinkEvidence(page);
+  const geometry = await geometryEvidence(page);
+  const geometryById = new Map(geometry.links.map((link) => [link.id, link]));
   expect(rendered).toHaveLength(5);
   expect(new Set(rendered.map((link) => link.color)).size).toBe(5);
   for (const link of rendered) {
+    const shared = geometryById.get(link.id);
+    expect(shared).toBeTruthy();
     expect(link.color).toBeTruthy();
     expect(link.d).toMatch(/^M /);
     expect(link.moveCount).toBe(1);
-    expect(link.cubicCount).toBe(8);
+    expect(link.cubicCount).toBe(shared.segmentCount);
+    expect(link.cubicCount).toBeGreaterThan(0);
     expect(link.startMarkerColor).toBe(link.color);
     expect(link.startLineCount).toBe(1);
     expect(link.startLineColors).toEqual([link.color]);
@@ -165,21 +176,20 @@ test("one semantic link is one colored C1 SVG path with faithful endpoint marker
   expect(Number.isFinite(root.length)).toBe(true);
   expect(root.length).toBeGreaterThan(1);
 
-  const geometry = await geometryEvidence(page);
   expect(geometry.finite).toBe(true);
   expect(geometry.links).toHaveLength(5);
   for (const link of geometry.links) {
-    expect(link.segmentCount).toBe(8);
+    expect(link.segmentCount).toBeGreaterThan(0);
     expect(link.c1).toBe(true);
     expect(link.allJointPointsContinuous).toBe(true);
     expect(link.allJointDerivativesContinuous).toBe(true);
-    expect(link.centerPointContinuous).toBe(true);
-    expect(link.centerDerivativeContinuous).toBe(true);
+    expect(link.centerOnPath).toBe(true);
     expect(link.startPinned).toBe(true);
     expect(link.endPinned).toBe(true);
+    expect(link.nonDegenerate).toBe(true);
   }
   const rootGeometry = geometry.links.find((link) => link.id === "R");
-  expect(rootGeometry).toMatchObject({ selfStart: true, selfEnd: true, c1: true });
+  expect(rootGeometry).toMatchObject({ selfStart: true, selfEnd: true, c1: true, centerOnPath: true });
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
 });
 
@@ -188,7 +198,9 @@ test("drag and view re-entry preserve pinning C1 color identity and semantic Ase
 
   const semanticBefore = await page.locator("#asetJson").textContent();
   await enterBlueprint(page);
-  const colorsBefore = Object.fromEntries((await renderedLinkEvidence(page)).map((link) => [link.id, link.color]));
+  const renderedBefore = await renderedLinkEvidence(page);
+  const colorsBefore = Object.fromEntries(renderedBefore.map((link) => [link.id, link.color]));
+  const pathsBefore = Object.fromEntries(renderedBefore.map((link) => [link.id, link.d]));
   const point = await centerScreenPoint(page, "O");
   expect(point).not.toBeNull();
 
@@ -201,11 +213,17 @@ test("drag and view re-entry preserve pinning C1 color identity and semantic Ase
   expect(afterDrag.finite).toBe(true);
   for (const link of afterDrag.links) {
     expect(link.c1).toBe(true);
-    expect(link.centerDerivativeContinuous).toBe(true);
+    expect(link.centerOnPath).toBe(true);
     expect(link.startPinned).toBe(true);
     expect(link.endPinned).toBe(true);
+    expect(link.nonDegenerate).toBe(true);
   }
-  expect(Object.fromEntries((await renderedLinkEvidence(page)).map((link) => [link.id, link.color]))).toEqual(colorsBefore);
+  expect(await geometryEvidence(page)).toEqual(afterDrag);
+  const renderedAfter = await renderedLinkEvidence(page);
+  const pathsAfter = Object.fromEntries(renderedAfter.map((link) => [link.id, link.d]));
+  expect(pathsAfter.L).not.toBe(pathsBefore.L);
+  expect(pathsAfter.U).not.toBe(pathsBefore.U);
+  expect(Object.fromEntries(renderedAfter.map((link) => [link.id, link.color]))).toEqual(colorsBefore);
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
 
   await page.selectOption("#graphView", "2d");
@@ -214,6 +232,7 @@ test("drag and view re-entry preserve pinning C1 color identity and semantic Ase
   await expect(page.locator('[data-role="blueprint-link-path"]')).toHaveCount(5);
   expect(Object.fromEntries((await renderedLinkEvidence(page)).map((link) => [link.id, link.color]))).toEqual(colorsBefore);
   const afterReentry = await geometryEvidence(page);
-  expect(afterReentry.links.every((link) => link.c1 && link.startPinned && link.endPinned)).toBe(true);
+  expect(afterReentry.links.every((link) =>
+    link.c1 && link.centerOnPath && link.startPinned && link.endPinned && link.nonDegenerate)).toBe(true);
   expect(await page.locator("#asetJson").textContent()).toBe(semanticBefore);
 });
