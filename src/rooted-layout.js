@@ -1,87 +1,22 @@
+import { projectAsetToVisualLinkNetwork } from "./mts-visual-adapter.js";
+
 const EPSILON = 1e-9;
 const TWO_PI = Math.PI * 2;
 
 // Structural depth is a property of link construction, not of the shortest
-// displayed path. Recursive cycles are collapsed first, so a self-loop never
-// creates an infinite depth.
-export function computeStructuralDepths(aset) {
-  const links = Array.isArray(aset?.links) ? aset.links : [];
-  const linkById = new Map(
-    links
-      .filter((link) => typeof link?.id === "string")
-      .map((link) => [link.id, link]),
-  );
-  const ids = [...linkById.keys()].sort();
-  const known = new Set(ids);
-  const dependenciesById = new Map(ids.map((id) => {
-    const link = linkById.get(id);
-    const dependencies = [...new Set([link?.start, link?.end]
-      .filter((dependency) => known.has(dependency)))].sort();
-    return [id, dependencies];
-  }));
-
-  const { components, componentOf } = stronglyConnectedComponents(ids, dependenciesById);
-  const componentDependencies = components.map(() => new Set());
-  components.forEach((members, componentIndex) => {
-    for (const id of members) {
-      for (const dependency of dependenciesById.get(id) ?? []) {
-        const dependencyComponent = componentOf.get(dependency);
-        if (dependencyComponent !== undefined && dependencyComponent !== componentIndex) {
-          componentDependencies[componentIndex].add(dependencyComponent);
-        }
-      }
-    }
-  });
-
-  const rootComponent = componentOf.get(aset?.root);
-  const componentDepths = new Array(components.length);
-  const depthOfComponent = (componentIndex) => {
-    if (componentDepths[componentIndex] !== undefined) return componentDepths[componentIndex];
-    if (componentIndex === rootComponent) {
-      componentDepths[componentIndex] = 0;
-      return 0;
-    }
-
-    const dependencyDepths = [...componentDependencies[componentIndex]]
-      .sort((left, right) => left - right)
-      .map(depthOfComponent);
-    const depth = 1 + (dependencyDepths.length > 0 ? Math.max(...dependencyDepths) : 0);
-    componentDepths[componentIndex] = depth;
-    return depth;
-  };
-
-  for (let index = 0; index < components.length; index += 1) depthOfComponent(index);
-
-  const depths = {};
-  const componentIds = {};
-  components.forEach((members, componentIndex) => {
-    const componentId = members.join("|");
-    for (const id of members) {
-      depths[id] = componentDepths[componentIndex];
-      componentIds[id] = componentId;
-    }
-  });
-
-  return {
-    depths,
-    componentIds,
-    components: components.map((members, index) => ({
-      id: members.join("|"),
-      members: [...members],
-      depth: componentDepths[index],
-      dependencyComponents: [...componentDependencies[index]]
-        .map((dependencyIndex) => components[dependencyIndex].join("|"))
-        .sort(),
-      root: index === rootComponent,
-    })),
-  };
+// displayed path. Recursive cycles are collapsed first, so a self-link never
+// creates an infinite depth. Topology comes only from VisualLinkNetwork.
+export function computeStructuralDepths(source, options = {}) {
+  const { network, rootKey } = resolveStructuralNetwork(source, options.rootKey);
+  return computeNetworkStructuralDepths(network, rootKey);
 }
 
 // Converts an arbitrary seed layout into concentric structural layers around
 // the root. Seed geometry is used only to preserve a stable angular ordering;
 // radius is derived exclusively from structural depth.
-export function buildRootedStructuralLayout(aset, seedPositions = {}, options = {}) {
-  const analysis = computeStructuralDepths(aset);
+export function buildRootedStructuralLayout(source, seedPositions = {}, options = {}) {
+  const { network, rootKey } = resolveStructuralNetwork(source, options.rootKey);
+  const analysis = computeNetworkStructuralDepths(network, rootKey);
   const known = new Set(Object.keys(analysis.depths));
   const visibleIds = Object.keys(seedPositions)
     .filter((id) => known.has(id) && finitePoint(seedPositions[id]))
@@ -144,8 +79,7 @@ export function buildRootedStructuralLayout(aset, seedPositions = {}, options = 
     });
   }
 
-  const root = aset?.root;
-  if (root && positions[root]) positions[root] = { ...center };
+  if (rootKey && positions[rootKey]) positions[rootKey] = { ...center };
 
   return {
     positions,
@@ -180,6 +114,92 @@ export function createRadialProjector(center, radii, fallbackAngles = {}) {
 export function radialDistance(center, point) {
   if (!finitePoint(center) || !finitePoint(point)) return Number.NaN;
   return Math.hypot(point.x - center.x, point.y - center.y);
+}
+
+function resolveStructuralNetwork(source, requestedRootKey) {
+  const networkLike = Array.isArray(source?.links)
+    && source.links.every((link) => (
+      typeof link?.key === "string"
+      && typeof link?.startKey === "string"
+      && typeof link?.endKey === "string"
+    ));
+  return {
+    network: networkLike ? source : projectAsetToVisualLinkNetwork(source),
+    rootKey: requestedRootKey ?? (networkLike ? null : source?.root ?? null),
+  };
+}
+
+function computeNetworkStructuralDepths(network, rootKey) {
+  const links = Array.isArray(network?.links) ? network.links : [];
+  const linkById = new Map(
+    links
+      .filter((link) => typeof link?.key === "string")
+      .map((link) => [link.key, link]),
+  );
+  const ids = [...linkById.keys()].sort();
+  const known = new Set(ids);
+  const dependenciesById = new Map(ids.map((id) => {
+    const link = linkById.get(id);
+    const dependencies = [...new Set([link?.startKey, link?.endKey]
+      .filter((dependency) => known.has(dependency)))].sort();
+    return [id, dependencies];
+  }));
+
+  const { components, componentOf } = stronglyConnectedComponents(ids, dependenciesById);
+  const componentDependencies = components.map(() => new Set());
+  components.forEach((members, componentIndex) => {
+    for (const id of members) {
+      for (const dependency of dependenciesById.get(id) ?? []) {
+        const dependencyComponent = componentOf.get(dependency);
+        if (dependencyComponent !== undefined && dependencyComponent !== componentIndex) {
+          componentDependencies[componentIndex].add(dependencyComponent);
+        }
+      }
+    }
+  });
+
+  const rootComponent = componentOf.get(rootKey);
+  const componentDepths = new Array(components.length);
+  const depthOfComponent = (componentIndex) => {
+    if (componentDepths[componentIndex] !== undefined) return componentDepths[componentIndex];
+    if (componentIndex === rootComponent) {
+      componentDepths[componentIndex] = 0;
+      return 0;
+    }
+
+    const dependencyDepths = [...componentDependencies[componentIndex]]
+      .sort((left, right) => left - right)
+      .map(depthOfComponent);
+    const depth = 1 + (dependencyDepths.length > 0 ? Math.max(...dependencyDepths) : 0);
+    componentDepths[componentIndex] = depth;
+    return depth;
+  };
+
+  for (let index = 0; index < components.length; index += 1) depthOfComponent(index);
+
+  const depths = {};
+  const componentIds = {};
+  components.forEach((members, componentIndex) => {
+    const componentId = members.join("|");
+    for (const id of members) {
+      depths[id] = componentDepths[componentIndex];
+      componentIds[id] = componentId;
+    }
+  });
+
+  return {
+    depths,
+    componentIds,
+    components: components.map((members, index) => ({
+      id: members.join("|"),
+      members: [...members],
+      depth: componentDepths[index],
+      dependencyComponents: [...componentDependencies[index]]
+        .map((dependencyIndex) => components[dependencyIndex].join("|"))
+        .sort(),
+      root: index === rootComponent,
+    })),
+  };
 }
 
 function stronglyConnectedComponents(ids, adjacency) {
