@@ -238,6 +238,24 @@ test("production app delegates initial and live 3D authority to accepted standal
   );
 });
 
+test("blueprint renderer delegates generic palette and viewport interaction to standalone @mts/visual", () => {
+  const source = readFileSync("src/blueprint-renderer.js", "utf8");
+
+  assert.match(
+    source,
+    /BLUEPRINT_LINK_PALETTE[\s\S]*blueprintLinkColor[\s\S]*createBlueprintViewport[\s\S]*fitBlueprintViewport[\s\S]*panBlueprintViewport[\s\S]*zoomBlueprintViewport[\s\S]*blueprintScreenToWorld[\s\S]*from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
+    "blueprint renderer must import shared palette and viewport interaction from standalone root",
+  );
+  assert.doesNotMatch(source, /const\s+MIN_SCALE\s*=/, "local minimum-scale authority must be removed");
+  assert.doesNotMatch(source, /const\s+MAX_SCALE\s*=/, "local maximum-scale authority must be removed");
+  assert.doesNotMatch(
+    source,
+    /export\s+const\s+BLUEPRINT_LINK_PALETTE\s*=\s*Object\.freeze\s*\(\s*\[/,
+    "local palette literal must not remain presentation authority",
+  );
+  assert.doesNotMatch(source, /function\s+clamp\s*\(/, "local generic viewport clamp must be removed");
+});
+
 test("obsolete downstream 3D authority is physically absent", () => {
   for (const path of [
     "src/three-renderer.js",
