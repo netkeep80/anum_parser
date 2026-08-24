@@ -41,6 +41,7 @@ async function enterBlueprint(page) {
 
 async function centerScreenPoint(page, linkId) {
   const center = page.locator(`[data-role="blueprint-center"][data-link-id="${linkId}"]`);
+  await center.scrollIntoViewIfNeeded();
   const box = await center.boundingBox();
   if (!box) return null;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
