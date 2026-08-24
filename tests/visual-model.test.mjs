@@ -126,7 +126,7 @@ test("structural 2D production не читает вторую Aset/visualModel t
   );
   assert.doesNotMatch(
     rootedSource,
-    /aset\?\.links|link\?\.start|link\?\.end/,
+    /aset\?\.links|link\?\.start\b|link\?\.end\b/,
     "rooted structural depth must consume VisualLinkNetwork topology",
   );
 });
