@@ -12,6 +12,7 @@ import {
   cytoscapeGraphStyle,
   visualModelToCytoscapeElements,
 } from "../src/cytoscape-adapter.js";
+import { projectAsetToVisualLinkNetwork } from "../src/mts-visual-adapter.js";
 import {
   asetToGraphElements,
   graphElementsForRendering,
@@ -85,6 +86,84 @@ test("Cytoscape semantic projection сохраняет A -> X -> B", () => {
 
   assert.deepEqual([start.data.source, start.data.target], ["A", "X"]);
   assert.deepEqual([end.data.source, end.data.target], ["X", "B"]);
+});
+
+test("VisualLinkNetwork projection сохраняет A -> X и Aset-order visibility boundary", async () => {
+  const network = projectAsetToVisualLinkNetwork(fixture());
+  const adapter = await import("../src/cytoscape-adapter.js");
+
+  assert.equal(
+    typeof adapter.visualNetworkToCytoscapeElements,
+    "function",
+    "structural 2D must expose a VisualLinkNetwork-native Cytoscape projection",
+  );
+
+  const elements = adapter.visualNetworkToCytoscapeElements(network, {
+    visibleKeys: ["X", "A"],
+    rootKey: "X",
+  });
+  const nodes = elements.filter((element) => !element.data.role);
+  const start = elements.find((element) => element.data.id === "pole-start:X");
+  const end = elements.find((element) => element.data.id === "pole-end:X");
+
+  assert.deepEqual(nodes.map((element) => element.data.id), ["X", "A"]);
+  assert.equal(nodes[0].data.label, "X\nцентр");
+  assert.equal(nodes[0].data.root, "yes");
+  assert.deepEqual([start.data.source, start.data.target], ["A", "X"]);
+  assert.equal(end, undefined, "END arc to non-visible B must stay omitted");
+});
+
+test("structural 2D production не читает вторую Aset/visualModel topology", async () => {
+  const [visualizerSource, rootedSource] = await Promise.all([
+    readFile(new URL("../src/visualizer.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/rooted-layout.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.doesNotMatch(
+    visualizerSource,
+    /buildVisualModel/,
+    "structural renderer must not rebuild parser-local visual topology",
+  );
+  assert.doesNotMatch(
+    rootedSource,
+    /aset\?\.links|link\?\.start\b|link\?\.end\b/,
+    "rooted structural depth must consume VisualLinkNetwork topology",
+  );
+});
+
+test("app держит local visualModel ленивым blueprint-only bridge", async () => {
+  const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+
+  assert.doesNotMatch(
+    source,
+    /state\.visualModel\s*=\s*buildVisualModel\(aset\)/,
+    "ordinary render must not eagerly build parser-local visual topology",
+  );
+  assert.match(
+    source,
+    /function\s+ensureBlueprintVisualModel\(aset[^)]*\)[\s\S]*?state\.visualModel\s*\?\?=\s*buildVisualModel\(aset\)/,
+    "local visualModel may survive only behind an explicit blueprint bridge",
+  );
+  assert.equal(
+    source.match(/\bbuildVisualModel\s*\(/g)?.length ?? 0,
+    1,
+    "production app must keep exactly one local visualModel construction site",
+  );
+  assert.match(
+    source,
+    /createBlueprintRenderer\(ui\.graph,\s*ensureBlueprintVisualModel\(aset\),/,
+    "blueprint must materialize the temporary local model lazily",
+  );
+  assert.equal(
+    source.match(/visualNetwork:\s*state\.visualNetwork/g)?.length ?? 0,
+    2,
+    "both normal and 3D-fallback structural 2D paths must consume state.visualNetwork",
+  );
+  assert.doesNotMatch(
+    source,
+    /visualModel:\s*state\.visualModel/,
+    "structural 2D must never receive the blueprint-only local model",
+  );
 });
 
 test("legacy Cytoscape facade сохраняет прежнюю link -> pole проекцию", () => {
