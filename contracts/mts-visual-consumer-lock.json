@@ -2,7 +2,7 @@
   "schema": "anum-parser-mts-visual-consumer-lock/v0.1",
   "channel": "accepted-presentation",
   "repository": "netkeep80/mts_visual",
-  "commit": "2d76cd29143fa764f4a08d0c0a788ff73c38841c",
+  "commit": "b4c29085f65e76e85dd49c74ed64cfa439366ab7",
   "package": {
     "root": ".",
     "name": "@mts/visual",

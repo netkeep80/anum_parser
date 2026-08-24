@@ -13,7 +13,7 @@ import {
 } from "../src/mts-visual-adapter.js";
 
 const EXPECTED_VISUAL_REPOSITORY = "netkeep80/mts_visual";
-const EXPECTED_VISUAL_COMMIT = "2d76cd29143fa764f4a08d0c0a788ff73c38841c";
+const EXPECTED_VISUAL_COMMIT = "b4c29085f65e76e85dd49c74ed64cfa439366ab7";
 const EXPECTED_VISUAL_VERSION = "0.2.0";
 const EXPECTED_VISUAL_ROOT = ".";
 const EXPECTED_VISUAL_MANIFEST_BLOB = "f17a2e119cd1e98110b5a36baa8535a435a03ac1";
@@ -97,6 +97,12 @@ test("materialized @mts/visual exposes accepted public root and three entries", 
   assert.equal(typeof root.createLivePhysics3D, "function");
   assert.equal(typeof root.setLivePhysics3DOptions, "function");
   assert.equal(typeof root.snapshotLivePhysics3D, "function");
+  assert.equal(typeof root.createBlueprintInitialPositions, "function");
+  assert.equal(typeof root.buildBlueprintGeometry, "function");
+  assert.equal(typeof root.blueprintGeometryIsFinite, "function");
+  assert.equal(typeof root.blueprintCubicDerivativeAtStart, "function");
+  assert.equal(typeof root.blueprintCubicDerivativeAtEnd, "function");
+  assert.equal(typeof root.blueprintSegmentsAreC1, "function");
   assert.ok(Array.isArray(root.BLUEPRINT_LINK_PALETTE));
   assert.ok(root.BLUEPRINT_LINK_PALETTE.length > 0);
   assert.equal(typeof root.blueprintLinkColor, "function");
@@ -246,14 +252,22 @@ test("production app delegates initial and live 3D authority to accepted standal
   );
 });
 
-test("blueprint renderer delegates generic palette and viewport interaction to standalone @mts/visual", () => {
+test("blueprint renderer delegates geometry, palette and viewport authority to standalone @mts/visual", () => {
   const source = readFileSync("src/blueprint-renderer.js", "utf8");
+  const app = readFileSync("src/app.js", "utf8");
 
   assert.match(
     source,
-    /BLUEPRINT_LINK_PALETTE[\s\S]*blueprintLinkColor[\s\S]*createBlueprintViewport[\s\S]*fitBlueprintViewport[\s\S]*panBlueprintViewport[\s\S]*zoomBlueprintViewport[\s\S]*blueprintScreenToWorld[\s\S]*from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
-    "blueprint renderer must import shared palette and viewport interaction from standalone root",
+    /buildBlueprintGeometry[\s\S]*createBlueprintInitialPositions[\s\S]*BLUEPRINT_LINK_PALETTE[\s\S]*blueprintLinkColor[\s\S]*createBlueprintViewport[\s\S]*fitBlueprintViewport[\s\S]*panBlueprintViewport[\s\S]*zoomBlueprintViewport[\s\S]*blueprintScreenToWorld[\s\S]*from\s+["']\.\.\/generated\/mts-visual\/index\.js["']/,
+    "blueprint renderer must import shared geometry, palette and viewport APIs from standalone root",
   );
+  assert.doesNotMatch(
+    source,
+    /from\s+["']\.\/blueprint-geometry\.js["']/,
+    "production blueprint renderer must not import local geometry authority",
+  );
+  assert.doesNotMatch(app, /ensureBlueprintVisualModel/, "production blueprint must consume VisualLinkNetwork directly");
+  assert.equal(existsSync("src/blueprint-geometry.js"), false, "local blueprint geometry authority must be deleted");
   assert.doesNotMatch(source, /const\s+MIN_SCALE\s*=/, "local minimum-scale authority must be removed");
   assert.doesNotMatch(source, /const\s+MAX_SCALE\s*=/, "local maximum-scale authority must be removed");
   assert.doesNotMatch(

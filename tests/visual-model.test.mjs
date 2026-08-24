@@ -131,38 +131,23 @@ test("structural 2D production не читает вторую Aset/visualModel t
   );
 });
 
-test("app держит local visualModel ленивым blueprint-only bridge", async () => {
+test("app передаёт blueprint тот же shared VisualLinkNetwork без local topology bridge", async () => {
   const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 
   assert.doesNotMatch(
     source,
-    /state\.visualModel\s*=\s*buildVisualModel\(aset\)/,
-    "ordinary render must not eagerly build parser-local visual topology",
+    /\bbuildVisualModel\b|ensureBlueprintVisualModel|state\.visualModel/,
+    "production app must not construct or retain parser-local blueprint topology",
   );
   assert.match(
     source,
-    /function\s+ensureBlueprintVisualModel\(aset[^)]*\)[\s\S]*?state\.visualModel\s*\?\?=\s*buildVisualModel\(aset\)/,
-    "local visualModel may survive only behind an explicit blueprint bridge",
-  );
-  assert.equal(
-    source.match(/\bbuildVisualModel\s*\(/g)?.length ?? 0,
-    1,
-    "production app must keep exactly one local visualModel construction site",
-  );
-  assert.match(
-    source,
-    /createBlueprintRenderer\(ui\.graph,\s*ensureBlueprintVisualModel\(aset\),/,
-    "blueprint must materialize the temporary local model lazily",
+    /createBlueprintRenderer\(ui\.graph,\s*state\.visualNetwork,/,
+    "blueprint must consume the same shared VisualLinkNetwork as the other renderers",
   );
   assert.equal(
     source.match(/visualNetwork:\s*state\.visualNetwork/g)?.length ?? 0,
     2,
     "both normal and 3D-fallback structural 2D paths must consume state.visualNetwork",
-  );
-  assert.doesNotMatch(
-    source,
-    /visualModel:\s*state\.visualModel/,
-    "structural 2D must never receive the blueprint-only local model",
   );
 });
 

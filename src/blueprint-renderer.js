@@ -1,4 +1,6 @@
 import {
+  buildBlueprintGeometry,
+  createBlueprintInitialPositions,
   BLUEPRINT_LINK_PALETTE,
   blueprintLinkColor,
   createBlueprintViewport,
@@ -6,8 +8,8 @@ import {
   panBlueprintViewport,
   zoomBlueprintViewport,
   blueprintScreenToWorld,
+  buildBlueprintSvgScene,
 } from "../generated/mts-visual/index.js";
-import { buildBlueprintGeometry, createBlueprintInitialPositions } from "./blueprint-geometry.js";
 
 export { BLUEPRINT_LINK_PALETTE, blueprintLinkColor };
 
@@ -16,15 +18,16 @@ const DEFAULT_PADDING = 36;
 const START_MARKER_X = 62.5 - (12.5 - 12.5 / 1.618);
 const instances = new WeakMap();
 
-export function createBlueprintRenderer(container, visualModel, options = {}) {
+export function createBlueprintRenderer(container, visualNetwork, options = {}) {
   if (!container) throw new Error("Blueprint renderer requires a container");
   destroyBlueprintRenderer(container);
 
   const state = {
     container,
-    visualModel,
-    positions: clonePositions(options.positions ?? createBlueprintInitialPositions(visualModel)),
-    linkColors: createLinkColors(visualModel),
+    visualNetwork,
+    positions: clonePositions(options.positions ?? createBlueprintInitialPositions(visualNetwork)),
+    linkColors: new Map(),
+    linksByKey: new Map((visualNetwork?.links ?? []).map((link) => [link.key, link])),
     selectedLinkId: options.selectedLinkId ?? null,
     debugState: options.debugState ?? null,
     onSelectLink: typeof options.onSelectLink === "function" ? options.onSelectLink : null,
@@ -91,17 +94,19 @@ export function fitBlueprintRenderer(container, padding = DEFAULT_PADDING) {
   redraw(state);
   const width = Math.max(1, container.clientWidth || 1);
   const height = Math.max(1, container.clientHeight || 1);
-  const points = state.geometry.links.flatMap((link) => link.pathPoints);
-  if (points.length === 0) {
+  if (state.scene.links.length === 0) {
     applySharedViewport(state, createBlueprintViewport(1, width / 2, height / 2));
     return snapshot(state);
   }
 
-  const bounds = boundsOf(points);
+  const bounds = state.scene.bounds;
   const fitBounds = {
-    ...bounds,
-    width: Math.max(1, bounds.maxX - bounds.minX),
-    height: Math.max(1, bounds.maxY - bounds.minY),
+    minX: bounds.minX,
+    minY: bounds.minY,
+    maxX: bounds.maxX,
+    maxY: bounds.maxY,
+    width: Math.max(1, bounds.width),
+    height: Math.max(1, bounds.height),
   };
   const requestedPadding = Number(padding);
   const finitePadding = Number.isFinite(requestedPadding) && requestedPadding >= 0 ? requestedPadding : 0;
@@ -158,40 +163,41 @@ export function setBlueprintPosition(container, linkId, position) {
   return true;
 }
 
-function createLinkColors(visualModel) {
-  return new Map((visualModel?.nodes ?? []).map((node, index) => [node.linkId, blueprintLinkColor(index)]));
-}
-
 function redraw(state) {
   if (state.destroyed) return;
-  state.geometry = buildBlueprintGeometry(state.visualModel, state.positions);
+  state.geometry = buildBlueprintGeometry(
+    state.visualNetwork,
+    toBlueprintPositions(state.positions),
+  );
+  state.scene = buildBlueprintSvgScene(state.visualNetwork, state.geometry, { padding: 0 });
+  state.linkColors = new Map(state.scene.links.map((link) => [link.key, link.color]));
   state.defs.replaceChildren();
   state.curvesLayer.replaceChildren();
   state.centersLayer.replaceChildren();
   state.labelsLayer.replaceChildren();
 
-  for (const link of state.geometry.links) {
-    const color = state.linkColors.get(link.linkId) ?? blueprintLinkColor(0);
-    const markerBase = safeId(`blueprint-${link.linkId}`);
-    const startMarkerId = `${markerBase}-start`;
-    const endMarkerId = `${markerBase}-end`;
+  for (const link of state.scene.links) {
+    const color = link.color;
+    const declared = state.linksByKey.get(link.key);
+    const root = declared?.tags?.includes("root") ?? false;
     state.defs.append(
-      createStartMarker(startMarkerId, color),
-      createEndMarker(endMarkerId, color),
+      createStartMarker(link.startMarkerId, color),
+      createEndMarker(link.endMarkerId, color),
     );
 
     const group = svgElement("g", {
       "data-role": "blueprint-link",
-      "data-link-id": link.linkId,
+      "data-link-id": link.key,
       "data-link-color": color,
     });
     const path = svgElement("path", {
-      d: link.path,
+      id: link.pathId,
+      d: link.d,
       class: "blueprint-curve",
       stroke: color,
       fill: "none",
-      "marker-start": `url(#${startMarkerId})`,
-      "marker-end": `url(#${endMarkerId})`,
+      "marker-start": `url(#${link.startMarkerId})`,
+      "marker-end": `url(#${link.endMarkerId})`,
       "data-role": "blueprint-link-path",
       "data-link-color": color,
     });
@@ -202,14 +208,14 @@ function redraw(state) {
       class: "blueprint-center-group",
       transform: `translate(${link.center.x} ${link.center.y})`,
       "data-role": "blueprint-center",
-      "data-link-id": link.linkId,
+      "data-link-id": link.key,
       "data-link-color": color,
       tabindex: "0",
     });
     const halo = svgElement("circle", { r: 13, class: "blueprint-center-halo" });
     const center = svgElement("circle", {
-      r: link.root ? 8 : 6.5,
-      class: `blueprint-center-dot${link.root ? " root" : ""}`,
+      r: root ? 8 : 6.5,
+      class: `blueprint-center-dot${root ? " root" : ""}`,
     });
     centerGroup.append(halo, center);
     state.centersLayer.append(centerGroup);
@@ -219,9 +225,9 @@ function redraw(state) {
       y: link.center.y - 11,
       class: "blueprint-label",
       "data-role": "blueprint-label",
-      "data-link-id": link.linkId,
+      "data-link-id": link.key,
     });
-    label.textContent = link.label ?? link.linkId;
+    label.textContent = link.label ?? link.key;
     state.labelsLayer.append(label);
   }
   applyViewportTransform(state);
@@ -446,28 +452,23 @@ function svgElement(name, attributes = {}) {
   return element;
 }
 
-function boundsOf(points) {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const point of points) {
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-    maxX = Math.max(maxX, point.x);
-    maxY = Math.max(maxY, point.y);
-  }
-  return { minX, minY, maxX, maxY };
+function clonePositions(positions) {
+  const entries = Array.isArray(positions)
+    ? positions.map(({ key, point }) => [key, point])
+    : Object.entries(positions ?? {});
+  return Object.fromEntries(entries.map(([key, point]) => [key, {
+    x: Number(point?.x),
+    y: Number(point?.y),
+  }]));
 }
 
-function clonePositions(positions) {
-  return Object.fromEntries(Object.entries(positions ?? {}).map(([id, point]) => [id, { x: Number(point.x), y: Number(point.y) }]));
+function toBlueprintPositions(positions) {
+  return Object.freeze(Object.entries(positions ?? {}).map(([key, point]) => Object.freeze({
+    key,
+    point: Object.freeze({ x: Number(point.x), y: Number(point.y) }),
+  })));
 }
 
 function finitePoint(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
-}
-
-function safeId(value) {
-  return String(value).replace(/[^A-Za-z0-9_-]/g, (character) => `_${character.codePointAt(0).toString(16)}_`);
 }
