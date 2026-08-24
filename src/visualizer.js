@@ -9,18 +9,16 @@ import {
   END_LOOP_SWEEP_DEG,
   START_LOOP_SWEEP_DEG,
   cytoscapeGraphStyle,
-  visualModelToCytoscapeElements,
+  visualNetworkToCytoscapeElements,
 } from "./cytoscape-adapter.js";
-import {
-  buildVisualModel,
-  normalizeVisualDebugState,
-} from "./visual-model.js";
+import { projectAsetToVisualLinkNetwork } from "./mts-visual-adapter.js";
 
 const graphStates = new WeakMap();
 const ARC_TANGENT_LENGTH = 26;
 const GEOMETRY_EPSILON = 1e-9;
 const SELF_LOOP_NODE_RADIUS = 24;
 const SELF_LOOP_CONTROL_RADIUS = 54;
+const DEFAULT_VISUAL_LIMIT = 300;
 
 export const ROOTED_LAYOUT_ID = "rooted";
 export const GRAPH_LAYOUTS = Object.freeze([
@@ -33,17 +31,23 @@ export const GRAPH_LAYOUTS = Object.freeze([
 ]);
 
 // Compatibility facade: прежняя базовая Cytoscape-проекция link -> pole
-// теперь получается из renderer-independent visual model.
-export function asetToGraphElements(aset, limit = 300) {
-  return visualModelToCytoscapeElements(
-    buildVisualModel(aset, limit),
-    { legacyPoleOrientation: true },
-  );
+// теперь получает topology через единственный parser -> VisualLinkNetwork adapter.
+export function asetToGraphElements(aset, limit = DEFAULT_VISUAL_LIMIT) {
+  const network = projectAsetToVisualLinkNetwork(aset);
+  return visualNetworkToCytoscapeElements(network, {
+    visibleKeys: visibleKeysFromAset(aset, limit),
+    rootKey: aset?.root ?? null,
+    legacyPoleOrientation: true,
+  });
 }
 
 // Семантическая renderer-проекция: startPole -> link -> endPole.
-export function graphElementsForRendering(aset, limit = 300) {
-  return visualModelToCytoscapeElements(buildVisualModel(aset, limit));
+export function graphElementsForRendering(aset, limit = DEFAULT_VISUAL_LIMIT) {
+  const network = projectAsetToVisualLinkNetwork(aset);
+  return visualNetworkToCytoscapeElements(network, {
+    visibleKeys: visibleKeysFromAset(aset, limit),
+    rootKey: aset?.root ?? null,
+  });
 }
 
 // Две GREEN-касательные одной связи в её центре всегда антипараллельны.
@@ -144,34 +148,47 @@ export function doubleSelfLoopGeometry() {
   };
 }
 
-// Полилинейное приближение именно отображаемых RGB-дуг. Это геометрия UI,
-// а не дополнительная семантическая реализация МТС.
-export function graphArcPaths(aset, positions, limit = 300, samples = 6) {
-  if (!aset?.links?.length) return [];
-  const links = aset.links.slice(0, limit);
-  const visible = new Set(links.map((link) => link.id));
+// Compatibility wrapper. Topology is projected once through the shared visual
+// boundary; Aset contributes only the historical display order/limit and root hint.
+export function graphArcPaths(aset, positions, limit = DEFAULT_VISUAL_LIMIT, samples = 6) {
+  const network = projectAsetToVisualLinkNetwork(aset);
+  return graphArcPathsForNetwork(network, positions, {
+    visibleKeys: visibleKeysFromAset(aset, limit),
+    samples,
+  });
+}
+
+function graphArcPathsForNetwork(network, positions, options = {}) {
+  const linkByKey = new Map((network?.links ?? []).map((link) => [link.key, link]));
+  const requestedKeys = Array.isArray(options.visibleKeys)
+    ? options.visibleKeys
+    : [...linkByKey.keys()];
+  const visibleKeys = requestedKeys.filter((key) => linkByKey.has(key));
+  const visible = new Set(visibleKeys);
+  const samples = options.samples ?? 6;
   const paths = [];
 
-  for (const link of links) {
-    const center = positions?.[link.id];
+  for (const key of visibleKeys) {
+    const link = linkByKey.get(key);
+    const center = positions?.[key];
     if (!center) continue;
-    const startPosition = visible.has(link.start) ? positions?.[link.start] : null;
-    const endPosition = visible.has(link.end) ? positions?.[link.end] : null;
-    const startSelf = link.start === link.id;
-    const endSelf = link.end === link.id;
+    const startPosition = visible.has(link.startKey) ? positions?.[link.startKey] : null;
+    const endPosition = visible.has(link.endKey) ? positions?.[link.endKey] : null;
+    const startSelf = link.startKey === key;
+    const endSelf = link.endKey === key;
 
     if (startPosition && endPosition && !startSelf && !endSelf) {
       const geometry = pairedArcControlGeometry(center, startPosition, endPosition);
       paths.push({
-        id: `pole-start:${link.id}`,
-        source: link.start,
-        target: link.id,
+        id: `pole-start:${key}`,
+        source: link.startKey,
+        target: key,
         points: sampleQuadraticBezier(startPosition, geometry.startControl, center, samples),
       });
       paths.push({
-        id: `pole-end:${link.id}`,
-        source: link.id,
-        target: link.end,
+        id: `pole-end:${key}`,
+        source: key,
+        target: link.endKey,
         points: sampleQuadraticBezier(center, geometry.endControl, endPosition, samples),
       });
       continue;
@@ -179,18 +196,18 @@ export function graphArcPaths(aset, positions, limit = 300, samples = 6) {
 
     if (startSelf && endSelf) {
       const geometry = doubleSelfLoopGeometry();
-      paths.push(loopArcPath(`pole-start:${link.id}`, link.id, center, geometry.startLoop, samples));
-      paths.push(loopArcPath(`pole-end:${link.id}`, link.id, center, geometry.endLoop, samples));
+      paths.push(loopArcPath(`pole-start:${key}`, key, center, geometry.startLoop, samples));
+      paths.push(loopArcPath(`pole-end:${key}`, key, center, geometry.endLoop, samples));
       continue;
     }
 
     if (startSelf && endPosition) {
       const geometry = singleSelfLoopGeometry(center, endPosition, "start");
-      paths.push(loopArcPath(`pole-start:${link.id}`, link.id, center, geometry.loop, samples));
+      paths.push(loopArcPath(`pole-start:${key}`, key, center, geometry.loop, samples));
       paths.push({
-        id: `pole-end:${link.id}`,
-        source: link.id,
-        target: link.end,
+        id: `pole-end:${key}`,
+        source: key,
+        target: link.endKey,
         points: sampleQuadraticBezier(center, geometry.companionControl, endPosition, samples),
       });
       continue;
@@ -199,28 +216,28 @@ export function graphArcPaths(aset, positions, limit = 300, samples = 6) {
     if (endSelf && startPosition) {
       const geometry = singleSelfLoopGeometry(center, startPosition, "end");
       paths.push({
-        id: `pole-start:${link.id}`,
-        source: link.start,
-        target: link.id,
+        id: `pole-start:${key}`,
+        source: link.startKey,
+        target: key,
         points: sampleQuadraticBezier(startPosition, geometry.companionControl, center, samples),
       });
-      paths.push(loopArcPath(`pole-end:${link.id}`, link.id, center, geometry.loop, samples));
+      paths.push(loopArcPath(`pole-end:${key}`, key, center, geometry.loop, samples));
       continue;
     }
 
     if (startPosition && !startSelf) {
       paths.push({
-        id: `pole-start:${link.id}`,
-        source: link.start,
-        target: link.id,
+        id: `pole-start:${key}`,
+        source: link.startKey,
+        target: key,
         points: [startPosition, center],
       });
     }
     if (endPosition && !endSelf) {
       paths.push({
-        id: `pole-end:${link.id}`,
-        source: link.id,
-        target: link.end,
+        id: `pole-end:${key}`,
+        source: key,
+        target: link.endKey,
         points: [center, endPosition],
       });
     }
@@ -230,13 +247,23 @@ export function graphArcPaths(aset, positions, limit = 300, samples = 6) {
 }
 
 export function optimizeAsetLayoutPositions(aset, positions, options = {}) {
-  const profile = optimizationProfile(Math.min(aset?.links?.length ?? 0, 300));
+  const network = projectAsetToVisualLinkNetwork(aset);
+  return optimizeNetworkLayoutPositions(network, positions, {
+    ...options,
+    visibleKeys: visibleKeysFromAset(aset, DEFAULT_VISUAL_LIMIT),
+    rootKey: aset?.root ?? null,
+  });
+}
+
+function optimizeNetworkLayoutPositions(network, positions, options = {}) {
+  const visibleKeys = normalizeVisibleKeys(network, options.visibleKeys);
+  const profile = optimizationProfile(visibleKeys.length);
   const samples = options.samples ?? profile.samples;
 
   return minimizeArcCrossings({
     positions,
-    buildPaths: (candidate) => graphArcPaths(aset, candidate, 300, samples),
-    fixedIds: [aset?.root].filter(Boolean),
+    buildPaths: (candidate) => graphArcPathsForNetwork(network, candidate, { visibleKeys, samples }),
+    fixedIds: [options.rootKey].filter(Boolean),
     maxPasses: options.maxPasses ?? profile.maxPasses,
     maxHotNodes: options.maxHotNodes ?? profile.maxHotNodes,
     maxEvaluations: options.maxEvaluations ?? profile.maxEvaluations,
@@ -246,9 +273,20 @@ export function optimizeAsetLayoutPositions(aset, positions, options = {}) {
 
 // Основной layout асети: depth определяет радиус, crossing minimizer — угол.
 export function optimizeRootedAsetLayoutPositions(aset, seedPositions, options = {}) {
-  const profile = optimizationProfile(Math.min(aset?.links?.length ?? 0, 300));
+  const network = projectAsetToVisualLinkNetwork(aset);
+  return optimizeRootedNetworkLayoutPositions(network, seedPositions, {
+    ...options,
+    visibleKeys: visibleKeysFromAset(aset, DEFAULT_VISUAL_LIMIT),
+    rootKey: aset?.root ?? null,
+  });
+}
+
+function optimizeRootedNetworkLayoutPositions(network, seedPositions, options = {}) {
+  const visibleKeys = normalizeVisibleKeys(network, options.visibleKeys);
+  const profile = optimizationProfile(visibleKeys.length);
   const samples = options.samples ?? profile.samples;
-  const structural = buildRootedStructuralLayout(aset, seedPositions, {
+  const structural = buildRootedStructuralLayout(network, seedPositions, {
+    rootKey: options.rootKey ?? null,
     layerSpacing: options.layerSpacing ?? 96,
     minimumNodeSpacing: options.minimumNodeSpacing ?? 58,
   });
@@ -256,8 +294,8 @@ export function optimizeRootedAsetLayoutPositions(aset, seedPositions, options =
     positions: structural.positions,
     center: structural.center,
     projectPosition: structural.projectPosition,
-    buildPaths: (candidate) => graphArcPaths(aset, candidate, 300, samples),
-    fixedIds: [aset?.root].filter(Boolean),
+    buildPaths: (candidate) => graphArcPathsForNetwork(network, candidate, { visibleKeys, samples }),
+    fixedIds: [options.rootKey].filter(Boolean),
     maxPasses: options.maxPasses ?? profile.maxPasses,
     maxHotNodes: options.maxHotNodes ?? Math.max(profile.maxHotNodes, 10),
     maxEvaluations: options.maxEvaluations ?? Math.max(profile.maxEvaluations, 160),
@@ -280,16 +318,21 @@ export function optimizeRootedAsetLayoutPositions(aset, seedPositions, options =
 
 export function renderAset(container, aset, options = {}) {
   destroyGraph(container);
-  if (!aset?.links?.length) {
+  const network = options.visualNetwork ?? projectAsetToVisualLinkNetwork(aset);
+  const visibleKeys = normalizeVisibleKeys(
+    network,
+    options.visibleKeys ?? visibleKeysFromAset(aset, DEFAULT_VISUAL_LIMIT),
+  );
+  if (visibleKeys.length === 0) {
     container.replaceChildren();
     return;
   }
 
+  const rootKey = options.rootKey ?? aset?.root ?? null;
   const cytoscape = requireCytoscape();
   const layoutId = options.layout ?? container.dataset.layout ?? ROOTED_LAYOUT_ID;
   container.dataset.layout = layoutId;
-  const visualModel = buildVisualModel(aset);
-  const elements = visualModelToCytoscapeElements(visualModel);
+  const elements = visualNetworkToCytoscapeElements(network, { visibleKeys, rootKey });
   const cy = cytoscape({
     container,
     elements,
@@ -319,8 +362,8 @@ export function renderAset(container, aset, options = {}) {
     const activeLayoutId = container.dataset.layout ?? ROOTED_LAYOUT_ID;
     const rooted = activeLayoutId === ROOTED_LAYOUT_ID;
     const result = rooted
-      ? optimizeRootedAsetLayoutPositions(aset, positions)
-      : optimizeAsetLayoutPositions(aset, positions);
+      ? optimizeRootedNetworkLayoutPositions(network, positions, { visibleKeys, rootKey })
+      : optimizeNetworkLayoutPositions(network, positions, { visibleKeys, rootKey });
 
     applyingPostprocess = true;
     try {
@@ -351,7 +394,7 @@ export function renderAset(container, aset, options = {}) {
 
   const resizeObserver = new ResizeObserver(() => cy.resize());
   resizeObserver.observe(container);
-  graphStates.set(container, { cy, resizeObserver, aset, visualModel });
+  graphStates.set(container, { cy, resizeObserver, network, visibleKeys, rootKey });
 }
 
 export function changeGraphLayout(container, layoutId) {
@@ -379,8 +422,8 @@ export function setGraphDebugState(container, debugState) {
   const state = graphStates.get(container);
   if (!state) return;
 
-  const { cy, visualModel } = state;
-  const normalized = normalizeVisualDebugState(visualModel, debugState);
+  const { cy, visibleKeys } = state;
+  const normalized = normalizeGraphDebugState(visibleKeys, debugState);
   const visible = new Set(normalized.visibleLinkIds);
   const produced = new Set(normalized.producedLinks);
   const reused = new Set(normalized.reusedLinks);
@@ -649,6 +692,42 @@ function layoutOptions(layoutId) {
         padding: 46,
       };
   }
+}
+
+function visibleKeysFromAset(aset, limit = DEFAULT_VISUAL_LIMIT) {
+  const normalizedLimit = normalizeVisualLimit(limit);
+  return Array.isArray(aset?.links)
+    ? aset.links.slice(0, normalizedLimit).map((link) => link.id)
+    : [];
+}
+
+function normalizeVisibleKeys(network, requestedKeys) {
+  const known = new Set((network?.links ?? []).map((link) => link.key));
+  const keys = Array.isArray(requestedKeys)
+    ? requestedKeys
+    : (network?.links ?? []).map((link) => link.key);
+  return keys.filter((key) => known.has(key));
+}
+
+function normalizeGraphDebugState(visibleKeys, debugState = null) {
+  const knownIds = new Set(visibleKeys);
+  const requestedVisible = debugState
+    ? new Set(debugState.visibleLinkIds ?? [])
+    : knownIds;
+  const requestedProduced = new Set(debugState?.producedLinks ?? []);
+  const requestedReused = new Set(debugState?.reusedLinks ?? []);
+
+  return {
+    visibleLinkIds: visibleKeys.filter((id) => requestedVisible.has(id)),
+    producedLinks: visibleKeys.filter((id) => requestedProduced.has(id)),
+    reusedLinks: visibleKeys.filter((id) => requestedReused.has(id)),
+    current: debugState?.current ?? null,
+  };
+}
+
+function normalizeVisualLimit(limit) {
+  if (!Number.isFinite(limit)) return DEFAULT_VISUAL_LIMIT;
+  return Math.max(0, Math.floor(limit));
 }
 
 export function graphStyle() {
