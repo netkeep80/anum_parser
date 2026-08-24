@@ -28,7 +28,6 @@ import {
   setBlueprintSelectedLink,
   zoomBlueprintRenderer,
 } from "./blueprint-renderer.js";
-import { buildVisualModel } from "./visual-model.js";
 import {
   GRAPH_LAYOUTS,
   ROOTED_LAYOUT_ID,
@@ -46,7 +45,6 @@ const state = {
   comparison: null,
   debugStep: 0,
   graphView: "2d",
-  visualModel: null,
   visualNetwork: null,
   visualInitialState: null,
   visualLiveController: null,
@@ -227,7 +225,6 @@ function render() {
   ui.asetJson.textContent = JSON.stringify(aset, null, 2);
   renderTrace(trace);
   renderComparison();
-  state.visualModel = null;
   state.visualNetwork = projectAsetToVisualLinkNetwork(aset);
   state.visualInitialState = null;
   state.visualLiveController = null;
@@ -258,12 +255,6 @@ function currentDebugState() {
 function captureBlueprintPositions() {
   const snapshot = getBlueprintRendererSnapshot(ui.graph);
   if (snapshot?.positions) state.blueprintPositions = snapshot.positions;
-}
-
-function ensureBlueprintVisualModel(aset = state.result?.aset) {
-  if (!aset) return null;
-  state.visualModel ??= buildVisualModel(aset);
-  return state.visualModel;
 }
 
 function ensureShared3dController() {
@@ -326,7 +317,7 @@ function renderGraph() {
   } else if (state.graphView === "blueprint") {
     destroyVisualThreeRenderer(ui.graph);
     destroyGraph(ui.graph);
-    createBlueprintRenderer(ui.graph, ensureBlueprintVisualModel(aset), {
+    createBlueprintRenderer(ui.graph, state.visualNetwork, {
       positions: state.blueprintPositions,
       debugState: currentDebugState(),
       selectedLinkId: state.selectedLinkId,
