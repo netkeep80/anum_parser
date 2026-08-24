@@ -227,7 +227,7 @@ function render() {
   ui.asetJson.textContent = JSON.stringify(aset, null, 2);
   renderTrace(trace);
   renderComparison();
-  state.visualModel = buildVisualModel(aset);
+  state.visualModel = null;
   state.visualNetwork = projectAsetToVisualLinkNetwork(aset);
   state.visualInitialState = null;
   state.visualLiveController = null;
@@ -260,6 +260,12 @@ function captureBlueprintPositions() {
   if (snapshot?.positions) state.blueprintPositions = snapshot.positions;
 }
 
+function ensureBlueprintVisualModel(aset = state.result?.aset) {
+  if (!aset) return null;
+  state.visualModel ??= buildVisualModel(aset);
+  return state.visualModel;
+}
+
 function ensureShared3dController() {
   state.visualNetwork ??= projectAsetToVisualLinkNetwork(state.result?.aset);
   state.visualInitialState ??= createInitialPhysics3DState(state.visualNetwork);
@@ -288,7 +294,6 @@ function applyShared3dPresentation() {
 function renderGraph() {
   const aset = state.result?.aset;
   if (!aset) return;
-  state.visualModel ??= buildVisualModel(aset);
   state.visualNetwork ??= projectAsetToVisualLinkNetwork(aset);
   state.graphWarning = null;
 
@@ -315,13 +320,13 @@ function renderGraph() {
       state.graphWarning = `3D недоступен: ${error?.message ?? error}. Включён структурный 2D.`;
       renderAset(ui.graph, aset, {
         layout: ui.graphLayout.value,
-        visualModel: state.visualModel,
+        visualNetwork: state.visualNetwork,
       });
     }
   } else if (state.graphView === "blueprint") {
     destroyVisualThreeRenderer(ui.graph);
     destroyGraph(ui.graph);
-    createBlueprintRenderer(ui.graph, state.visualModel, {
+    createBlueprintRenderer(ui.graph, ensureBlueprintVisualModel(aset), {
       positions: state.blueprintPositions,
       debugState: currentDebugState(),
       selectedLinkId: state.selectedLinkId,
@@ -336,7 +341,7 @@ function renderGraph() {
     destroyVisualThreeRenderer(ui.graph);
     renderAset(ui.graph, aset, {
       layout: ui.graphLayout.value,
-      visualModel: state.visualModel,
+      visualNetwork: state.visualNetwork,
     });
   }
   updateGraphControls();
