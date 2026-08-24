@@ -220,6 +220,11 @@ test("production app delegates initial and live 3D authority to accepted standal
   assert.doesNotMatch(source, /from\s+["']\.\/readable-layout3d\.js["']/);
   assert.doesNotMatch(source, /solveReadableLayout3d/);
   assert.doesNotMatch(source, /projectReadableLayoutToPhysics3DState/);
+  assert.doesNotMatch(
+    source,
+    /physicalState/,
+    "production app must not retain parser-local physical seed state",
+  );
   assert.doesNotMatch(adapter, /projectReadableLayoutToPhysics3DState/);
   assert.doesNotMatch(
     materializer,
