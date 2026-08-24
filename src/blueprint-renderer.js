@@ -1,35 +1,20 @@
+import {
+  BLUEPRINT_LINK_PALETTE,
+  blueprintLinkColor,
+  createBlueprintViewport,
+  fitBlueprintViewport,
+  panBlueprintViewport,
+  zoomBlueprintViewport,
+  blueprintScreenToWorld,
+} from "../generated/mts-visual/index.js";
 import { buildBlueprintGeometry, createBlueprintInitialPositions } from "./blueprint-geometry.js";
 
+export { BLUEPRINT_LINK_PALETTE, blueprintLinkColor };
+
 const SVG_NS = "http://www.w3.org/2000/svg";
-const MIN_SCALE = 0.1;
-const MAX_SCALE = 20;
 const DEFAULT_PADDING = 36;
 const START_MARKER_X = 62.5 - (12.5 - 12.5 / 1.618);
 const instances = new WeakMap();
-
-// Presentation-only palette. A link color is stable for a deterministic visual-model
-// order, but it is never MTS identity or semantic authority.
-export const BLUEPRINT_LINK_PALETTE = Object.freeze([
-  "#59aaf7",
-  "#ff9d4d",
-  "#ef6f6c",
-  "#65c4b0",
-  "#9bc75b",
-  "#f2cf5b",
-  "#b889d6",
-  "#f28eae",
-  "#c49a6c",
-  "#b9b9b9",
-  "#5bc0eb",
-  "#d982c3",
-]);
-
-export function blueprintLinkColor(index) {
-  const safeIndex = Number.isInteger(index) && index >= 0 ? index : 0;
-  if (safeIndex < BLUEPRINT_LINK_PALETTE.length) return BLUEPRINT_LINK_PALETTE[safeIndex];
-  const hue = (210 + safeIndex * 137.50776405003785) % 360;
-  return `hsl(${Number(hue.toFixed(3))} 72% 62%)`;
-}
 
 export function createBlueprintRenderer(container, visualModel, options = {}) {
   if (!container) throw new Error("Blueprint renderer requires a container");
@@ -104,46 +89,43 @@ export function hasBlueprintRenderer(container) {
 export function fitBlueprintRenderer(container, padding = DEFAULT_PADDING) {
   const state = requireState(container);
   redraw(state);
+  const width = Math.max(1, container.clientWidth || 1);
+  const height = Math.max(1, container.clientHeight || 1);
   const points = state.geometry.links.flatMap((link) => link.pathPoints);
   if (points.length === 0) {
-    state.scale = 1;
-    state.panX = container.clientWidth / 2;
-    state.panY = container.clientHeight / 2;
-    applyViewportTransform(state);
+    applySharedViewport(state, createBlueprintViewport(1, width / 2, height / 2));
     return snapshot(state);
   }
 
   const bounds = boundsOf(points);
-  const width = Math.max(1, container.clientWidth || 1);
-  const height = Math.max(1, container.clientHeight || 1);
-  const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
-  const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
-  const availableWidth = Math.max(1, width - padding * 2);
-  const availableHeight = Math.max(1, height - padding * 2);
-  state.scale = clamp(Math.min(availableWidth / contentWidth, availableHeight / contentHeight), MIN_SCALE, MAX_SCALE);
-  const centerX = (bounds.minX + bounds.maxX) / 2;
-  const centerY = (bounds.minY + bounds.maxY) / 2;
-  state.panX = width / 2 - centerX * state.scale;
-  state.panY = height / 2 - centerY * state.scale;
-  applyViewportTransform(state);
+  const fitBounds = {
+    ...bounds,
+    width: Math.max(1, bounds.maxX - bounds.minX),
+    height: Math.max(1, bounds.maxY - bounds.minY),
+  };
+  const requestedPadding = Number(padding);
+  const finitePadding = Number.isFinite(requestedPadding) && requestedPadding >= 0 ? requestedPadding : 0;
+  const maxPadding = Math.max(0, (Math.min(width, height) - 1) / 2);
+  const safePadding = Math.min(finitePadding, maxPadding);
+  applySharedViewport(
+    state,
+    fitBlueprintViewport(fitBounds, width, height, { padding: safePadding }),
+  );
   return snapshot(state);
 }
 
 export function zoomBlueprintRenderer(container, factor, anchor = null) {
   const state = requireState(container);
-  const oldScale = state.scale;
-  const nextScale = clamp(oldScale * Number(factor || 1), MIN_SCALE, MAX_SCALE);
-  if (nextScale === oldScale) return snapshot(state);
   const width = Math.max(1, container.clientWidth || 1);
   const height = Math.max(1, container.clientHeight || 1);
   const x = Number.isFinite(anchor?.x) ? anchor.x : width / 2;
   const y = Number.isFinite(anchor?.y) ? anchor.y : height / 2;
-  const worldX = (x - state.panX) / oldScale;
-  const worldY = (y - state.panY) / oldScale;
-  state.scale = nextScale;
-  state.panX = x - worldX * nextScale;
-  state.panY = y - worldY * nextScale;
-  applyViewportTransform(state);
+  const zoomFactor = Number(factor || 1);
+  if (!Number.isFinite(zoomFactor) || zoomFactor <= 0) return snapshot(state);
+  applySharedViewport(
+    state,
+    zoomBlueprintViewport(currentBlueprintViewport(state), zoomFactor, { x, y }),
+  );
   return snapshot(state);
 }
 
@@ -295,9 +277,14 @@ function installInteraction(state) {
     }
     if (state.panDrag?.pointerId === event.pointerId) {
       event.preventDefault();
-      state.panX = state.panDrag.panX + event.clientX - state.panDrag.startX;
-      state.panY = state.panDrag.panY + event.clientY - state.panDrag.startY;
-      applyViewportTransform(state);
+      applySharedViewport(
+        state,
+        panBlueprintViewport(
+          createBlueprintViewport(state.scale, state.panDrag.panX, state.panDrag.panY),
+          event.clientX - state.panDrag.startX,
+          event.clientY - state.panDrag.startY,
+        ),
+      );
     }
   });
 
@@ -334,10 +321,13 @@ function installInteraction(state) {
 
 function moveDraggedCenter(state, event) {
   const rect = state.svg.getBoundingClientRect();
-  const x = (event.clientX - rect.left - state.panX) / state.scale;
-  const y = (event.clientY - rect.top - state.panY) / state.scale;
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-  state.positions[state.drag.linkId] = { x, y };
+  const screenPoint = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+  if (!finitePoint(screenPoint)) return;
+  const worldPoint = blueprintScreenToWorld(currentBlueprintViewport(state), screenPoint);
+  state.positions[state.drag.linkId] = { x: worldPoint.x, y: worldPoint.y };
   redraw(state);
 }
 
@@ -345,6 +335,17 @@ function select(state, linkId) {
   state.selectedLinkId = linkId ?? null;
   updatePresentation(state);
   state.onSelectLink?.(state.selectedLinkId);
+}
+
+function currentBlueprintViewport(state) {
+  return createBlueprintViewport(state.scale, state.panX, state.panY);
+}
+
+function applySharedViewport(state, viewport) {
+  state.scale = viewport.scale;
+  state.panX = viewport.panX;
+  state.panY = viewport.panY;
+  applyViewportTransform(state);
 }
 
 function applyViewportTransform(state) {
@@ -465,10 +466,6 @@ function clonePositions(positions) {
 
 function finitePoint(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function safeId(value) {
