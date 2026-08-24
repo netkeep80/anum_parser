@@ -97,6 +97,14 @@ test("materialized @mts/visual exposes accepted public root and three entries", 
   assert.equal(typeof root.createLivePhysics3D, "function");
   assert.equal(typeof root.setLivePhysics3DOptions, "function");
   assert.equal(typeof root.snapshotLivePhysics3D, "function");
+  assert.ok(Array.isArray(root.BLUEPRINT_LINK_PALETTE));
+  assert.ok(root.BLUEPRINT_LINK_PALETTE.length > 0);
+  assert.equal(typeof root.blueprintLinkColor, "function");
+  assert.equal(typeof root.createBlueprintViewport, "function");
+  assert.equal(typeof root.fitBlueprintViewport, "function");
+  assert.equal(typeof root.panBlueprintViewport, "function");
+  assert.equal(typeof root.zoomBlueprintViewport, "function");
+  assert.equal(typeof root.blueprintScreenToWorld, "function");
   assert.equal(typeof three.createVisualThreeLiveRenderer, "function");
   assert.equal(typeof three.setVisualThreeLivePaused, "function");
   assert.equal(typeof three.setVisualThreePresentation, "function");
