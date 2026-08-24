@@ -12,6 +12,7 @@ import {
   cytoscapeGraphStyle,
   visualModelToCytoscapeElements,
 } from "../src/cytoscape-adapter.js";
+import { projectAsetToVisualLinkNetwork } from "../src/mts-visual-adapter.js";
 import {
   asetToGraphElements,
   graphElementsForRendering,
@@ -85,6 +86,49 @@ test("Cytoscape semantic projection сохраняет A -> X -> B", () => {
 
   assert.deepEqual([start.data.source, start.data.target], ["A", "X"]);
   assert.deepEqual([end.data.source, end.data.target], ["X", "B"]);
+});
+
+test("VisualLinkNetwork projection сохраняет A -> X и Aset-order visibility boundary", async () => {
+  const network = projectAsetToVisualLinkNetwork(fixture());
+  const adapter = await import("../src/cytoscape-adapter.js");
+
+  assert.equal(
+    typeof adapter.visualNetworkToCytoscapeElements,
+    "function",
+    "structural 2D must expose a VisualLinkNetwork-native Cytoscape projection",
+  );
+
+  const elements = adapter.visualNetworkToCytoscapeElements(network, {
+    visibleKeys: ["X", "A"],
+    rootKey: "X",
+  });
+  const nodes = elements.filter((element) => !element.data.role);
+  const start = elements.find((element) => element.data.id === "pole-start:X");
+  const end = elements.find((element) => element.data.id === "pole-end:X");
+
+  assert.deepEqual(nodes.map((element) => element.data.id), ["X", "A"]);
+  assert.equal(nodes[0].data.label, "X\nцентр");
+  assert.equal(nodes[0].data.root, "yes");
+  assert.deepEqual([start.data.source, start.data.target], ["A", "X"]);
+  assert.equal(end, undefined, "END arc to non-visible B must stay omitted");
+});
+
+test("structural 2D production не читает вторую Aset/visualModel topology", async () => {
+  const [visualizerSource, rootedSource] = await Promise.all([
+    readFile(new URL("../src/visualizer.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/rooted-layout.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.doesNotMatch(
+    visualizerSource,
+    /buildVisualModel/,
+    "structural renderer must not rebuild parser-local visual topology",
+  );
+  assert.doesNotMatch(
+    rootedSource,
+    /aset\?\.links|link\?\.start|link\?\.end/,
+    "rooted structural depth must consume VisualLinkNetwork topology",
+  );
 });
 
 test("legacy Cytoscape facade сохраняет прежнюю link -> pole проекцию", () => {
