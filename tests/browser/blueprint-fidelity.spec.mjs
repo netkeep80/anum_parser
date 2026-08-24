@@ -41,6 +41,7 @@ async function enterBlueprint(page) {
 
 async function centerScreenPoint(page, linkId) {
   const center = page.locator(`[data-role="blueprint-center"][data-link-id="${linkId}"]`);
+  // Mouse coordinates must target a center inside the current headless viewport.
   await center.scrollIntoViewIfNeeded();
   const box = await center.boundingBox();
   if (!box) return null;
