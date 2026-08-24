@@ -1,7 +1,65 @@
+import { normalizeVisualLinkNetwork } from "../generated/mts-visual/index.js";
 import { SEMANTIC_COLORS } from "./visual-model.js";
 
 export const START_LOOP_SWEEP_DEG = -65;
 export const END_LOOP_SWEEP_DEG = 65;
+
+export function visualNetworkToCytoscapeElements(network, options = {}) {
+  const normalized = normalizeVisualLinkNetwork(network);
+  const linkByKey = new Map(normalized.links.map((link) => [link.key, link]));
+  const requestedKeys = Array.isArray(options.visibleKeys)
+    ? options.visibleKeys
+    : normalized.links.map((link) => link.key);
+  const visibleKeys = requestedKeys.filter((key) => linkByKey.has(key));
+  const visible = new Set(visibleKeys);
+  const legacyPoleOrientation = options.legacyPoleOrientation === true;
+  const rootKey = options.rootKey ?? null;
+  const elements = [];
+
+  for (const key of visibleKeys) {
+    const link = linkByKey.get(key);
+    elements.push({
+      data: {
+        id: link.key,
+        label: visualLinkLabel(link),
+        linkId: link.key,
+        start: link.startKey,
+        end: link.endKey,
+        root: link.key === rootKey ? "yes" : "no",
+      },
+    });
+  }
+
+  for (const key of visibleKeys) {
+    const link = linkByKey.get(key);
+    if (visible.has(link.startKey)) {
+      elements.push({
+        data: {
+          id: `pole-start:${link.key}`,
+          source: legacyPoleOrientation ? link.key : link.startKey,
+          target: legacyPoleOrientation ? link.startKey : link.key,
+          linkId: link.key,
+          role: "start",
+          label: "начало",
+        },
+      });
+    }
+    if (visible.has(link.endKey)) {
+      elements.push({
+        data: {
+          id: `pole-end:${link.key}`,
+          source: link.key,
+          target: link.endKey,
+          linkId: link.key,
+          role: "end",
+          label: "конец",
+        },
+      });
+    }
+  }
+
+  return elements;
+}
 
 export function visualModelToCytoscapeElements(visualModel, options = {}) {
   const legacyPoleOrientation = options.legacyPoleOrientation === true;
@@ -197,4 +255,10 @@ export function cytoscapeGraphStyle() {
       },
     },
   ];
+}
+
+function visualLinkLabel(link) {
+  return link.label && link.label !== link.key
+    ? `${link.key}\n${link.label}`
+    : link.key;
 }
