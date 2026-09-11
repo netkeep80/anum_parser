@@ -30,6 +30,121 @@
     "max_new_files": 20,
     "max_net_added_lines": 2500
   },
+  "document_relations": {
+    "documents": {
+      "base-package": {
+        "path": "package.json",
+        "format": "json",
+        "snapshot": "base"
+      },
+      "head-package": {
+        "path": "package.json",
+        "format": "json",
+        "snapshot": "head"
+      },
+      "head-package-lock": {
+        "path": "package-lock.json",
+        "format": "json",
+        "snapshot": "head"
+      },
+      "repo-guard-workflow": {
+        "path": ".github/workflows/repo-guard.yml",
+        "format": "yaml",
+        "snapshot": "head"
+      }
+    },
+    "rules": [
+      {
+        "id": "application-version-monotonic",
+        "kind": "scalar_strictly_greater",
+        "comparator": "semver",
+        "left": {
+          "document": "head-package",
+          "pointer": "/version",
+          "type": "string"
+        },
+        "right": {
+          "document": "base-package",
+          "pointer": "/version",
+          "type": "string"
+        }
+      },
+      {
+        "id": "package-lock-version-matches",
+        "kind": "scalar_equal",
+        "left": {
+          "document": "head-package",
+          "pointer": "/version",
+          "type": "string"
+        },
+        "right": {
+          "document": "head-package-lock",
+          "pointer": "/packages//version",
+          "type": "string"
+        }
+      },
+      {
+        "id": "repo-guard-workflow-action-pin",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/jobs/policy-check/steps/1/uses",
+          "type": "string"
+        },
+        "value": "netkeep80/repo-guard@e5b9063c9d1c9e05404ec32b78ca005c278839ce"
+      },
+      {
+        "id": "repo-guard-workflow-mode",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/jobs/policy-check/steps/1/with/mode",
+          "type": "string"
+        },
+        "value": "check-pr"
+      },
+      {
+        "id": "repo-guard-workflow-enforcement",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/jobs/policy-check/steps/1/with/enforcement",
+          "type": "string"
+        },
+        "value": "blocking"
+      },
+      {
+        "id": "repo-guard-workflow-permission-contents",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/permissions/contents",
+          "type": "string"
+        },
+        "value": "read"
+      },
+      {
+        "id": "repo-guard-workflow-permission-issues",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/permissions/issues",
+          "type": "string"
+        },
+        "value": "read"
+      },
+      {
+        "id": "repo-guard-workflow-permission-pull-requests",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/permissions/pull-requests",
+          "type": "string"
+        },
+        "value": "read"
+      }
+    ]
+  },
   "content_rules": [
     {
       "id": "readme-russian-first",
@@ -50,5 +165,14 @@
       "max_unapproved_latin_words_per_line": 1
     }
   ],
-  "cochange_rules": []
+  "cochange_rules": [],
+  "cochange_groups": [
+    {
+      "id": "application-version-metadata",
+      "members": [
+        "package.json",
+        "package-lock.json"
+      ]
+    }
+  ]
 }
