@@ -30,6 +30,29 @@
     "max_new_files": 20,
     "max_net_added_lines": 2500
   },
+  "packs": {
+    "version-governance": {
+      "authority": {
+        "path": "package.json",
+        "pointer": "/version"
+      },
+      "advance": "semver",
+      "mirrors": [
+        {
+          "path": "package-lock.json",
+          "pointer": "/version"
+        },
+        {
+          "path": "package-lock.json",
+          "pointer": "/packages//version"
+        }
+      ]
+    },
+    "repo-guard-workflow": {
+      "path": ".github/workflows/repo-guard.yml",
+      "sha": "be59be254eddf753e938f62ba1d749ec7a37fe8a"
+    }
+  },
   "content_rules": [
     {
       "id": "readme-russian-first",
@@ -50,5 +73,14 @@
       "max_unapproved_latin_words_per_line": 1
     }
   ],
-  "cochange_rules": []
+  "cochange_rules": [],
+  "cochange_groups": [
+    {
+      "id": "application-version-metadata",
+      "members": [
+        "package.json",
+        "package-lock.json"
+      ]
+    }
+  ]
 }
