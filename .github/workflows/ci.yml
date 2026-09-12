@@ -8,8 +8,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  core:
+    name: Core validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -18,9 +23,16 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm ci
-      - run: npm run check
-      - run: npm test
-      - run: npm run site:build
+      - name: Prepare exact runtime and browser dependencies
+        run: npm run deps:prepare
+      - name: Syntax checks
+        run: npm run check:prepared
+      - name: Unit tests
+        run: npm run test:prepared
+      - name: Verify accepted @mts/core consumer lock
+        run: node scripts/verify-mts-core-consumer.mjs
+      - name: Reproducible site build
+        run: npm run site:build
 
   browser-acceptance:
     name: Browser acceptance (_site / Chromium)
@@ -45,18 +57,3 @@ jobs:
           path: test-results/browser
           if-no-files-found: ignore
           retention-days: 7
-
-  mts-core-consumer:
-    name: Verify accepted @mts/core consumer lock
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          package-manager-cache: false
-      - name: Materialize exact runtime for local differential adapter
-        run: npm run mts:prepare
-      - name: Rebuild, digest and consume exact @mts/core artifact
-        run: node scripts/verify-mts-core-consumer.mjs
