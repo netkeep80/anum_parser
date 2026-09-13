@@ -256,23 +256,83 @@ test("shared live controls, fit, zoom and fullscreen remain operational", async 
   await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "false");
 });
 
-test("debugger updates generic shared presentation without destroying renderer", async ({ page }, testInfo) => {
+test("debugger evolves the mounted physical topology without recreating the renderer", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium-desktop");
   await page.selectOption("#sample", "12");
   await page.locator("#run").click();
   await expect(page.locator("#status")).toContainText("Готово");
   await enter3d(page);
-  const before = await sharedRendererSnapshot(page);
-  const last = await page.locator("#debugStep").textContent();
+
+  const canvas = page.locator("#graph > canvas");
+  const pause = page.locator("#graphPhysicsPause");
+  const step = page.locator("#debugStep");
+  await pause.click();
+
+  const finalSnapshot = await sharedRendererSnapshot(page);
+  expect(finalSnapshot.nodeCount).toBeGreaterThan(5);
+  expect(finalSnapshot.arcCount).toBe(finalSnapshot.nodeCount * 2);
+
+  await page.locator("#graphFit").click();
+  await page.locator("#graphZoomIn").click();
+  const cameraBefore = (await sharedRendererSnapshot(page)).cameraPosition;
+  await forceCssFullscreenFallback(page);
+  await page.locator("#graphFullscreen").click();
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#graphPanel")).toHaveClass(/graph-fullscreen-fallback/);
+
+  const lastStep = await step.textContent();
   await page.locator("#debugFirst").click();
-  await expect(page.locator("#debugStep")).not.toHaveText(last);
+  await expect(step).not.toHaveText(lastStep);
   await expect(page.locator("#debugCurrent")).toContainText("операция:");
-  const after = await sharedRendererSnapshot(page);
-  expect(after.nodeCount).toBe(before.nodeCount);
-  expect(after.arcCount).toBe(before.arcCount);
-  await page.locator("#debugNext").click();
+  const firstSnapshot = await sharedRendererSnapshot(page);
+  expect(firstSnapshot.nodeCount).toBeLessThan(finalSnapshot.nodeCount);
+  expect(firstSnapshot.arcCount).toBe(firstSnapshot.nodeCount * 2);
+  expect(firstSnapshot.cameraPosition).toEqual(cameraBefore);
+  await expect(canvas).toHaveCount(1);
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#graphPanel")).toHaveClass(/graph-fullscreen-fallback/);
+
+  let previousSnapshot = firstSnapshot;
+  let addition = null;
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const next = page.locator("#debugNext");
+    if (await next.isDisabled()) break;
+    const beforeStep = await step.textContent();
+    await next.click();
+    await expect(step).not.toHaveText(beforeStep);
+    const currentSnapshot = await sharedRendererSnapshot(page);
+    expect(currentSnapshot.arcCount).toBe(currentSnapshot.nodeCount * 2);
+    if (currentSnapshot.nodeCount > previousSnapshot.nodeCount) {
+      addition = { before: previousSnapshot, after: currentSnapshot };
+      break;
+    }
+    previousSnapshot = currentSnapshot;
+  }
+
+  expect(addition, "sample q-10 must contain a debugger step that adds physical topology").not.toBeNull();
   await expect(page.locator("#debugEffects")).toContainText("видимых связей:");
-  expect(await sharedRendererSnapshot(page)).not.toBeNull();
+  await expect(canvas).toHaveCount(1);
+  expect(addition.after.cameraPosition).toEqual(cameraBefore);
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
+
+  const pausedAfterAddition = await canvas.screenshot();
+  const addedNodeCount = addition.after.nodeCount;
+  await pause.click();
+  await expect.poll(async () => (await canvas.screenshot()).equals(pausedAfterAddition)).toBe(false);
+  expect((await sharedRendererSnapshot(page)).nodeCount).toBe(addedNodeCount);
+  await pause.click();
+
+  const addedStep = await step.textContent();
+  await page.locator("#debugPrev").click();
+  await expect(step).not.toHaveText(addedStep);
+  const backwardSnapshot = await sharedRendererSnapshot(page);
+  expect(backwardSnapshot.nodeCount).toBe(addition.before.nodeCount);
+  expect(backwardSnapshot.nodeCount).toBeLessThan(addedNodeCount);
+  expect(backwardSnapshot.arcCount).toBe(backwardSnapshot.nodeCount * 2);
+  expect(backwardSnapshot.cameraPosition).toEqual(cameraBefore);
+  await expect(canvas).toHaveCount(1);
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#graphPanel")).toHaveClass(/graph-fullscreen-fallback/);
 });
 
 test("repeated 2D/3D switching disposes and recreates only shared renderer state", async ({ page }, testInfo) => {
