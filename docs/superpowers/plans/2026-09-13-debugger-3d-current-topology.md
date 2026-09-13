@@ -23,6 +23,10 @@
 - Application version advances from live `0.5.1` to `0.5.2` under current version-governance, unless `main` moves before the write.
 - Every production behavior change follows RED -> GREEN.
 
+## Execution status — 2026-09-13
+
+Implementation through the Task 5 behavior is complete in PR #125. The clean browser RED was recorded on `f27f6742c4aecf8ab14e519a02adfec66e0f2c19`: after `debugFirst`, the old wiring still reported `nodeCount = 11`, equal to the final topology. Production head `7aaddb6aa5ddd282426b8c049c0d2528eaf7c022` then passed CI #242 completely: Core validation GREEN, exact semantic-core lock verification GREEN, reproducible site GREEN, and full Chromium browser acceptance GREEN. Exact diff audit showed only the eight declared paths, with `behind_by=0` and `mergeable=true`. PR #125 is Ready. This documentation-only synchronize commit exists because the blocking repo-guard workflow listens to `opened` and `synchronize`, not `ready_for_review`; it therefore triggers the required blocking gate without altering production behavior.
+
 ---
 
 ### Task 1: RED proof for parser-owned current-step projection
