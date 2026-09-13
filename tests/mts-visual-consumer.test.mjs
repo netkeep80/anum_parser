@@ -9,6 +9,7 @@ import {
 } from "../generated/mts-visual/index.js";
 import {
   projectAsetToVisualLinkNetwork,
+  projectDebugStepVisualLinkNetwork,
   projectParserVisualPresentation,
 } from "../src/mts-visual-adapter.js";
 
@@ -170,6 +171,52 @@ test("input order and parser-only provenance do not alter normalized shared topo
   assert.deepEqual(
     topology(projectAsetToVisualLinkNetwork(a)),
     topology(projectAsetToVisualLinkNetwork(b)),
+  );
+});
+
+test("debug-step topology is exactly the reference-closed visibleLinkIds set", () => {
+  const aset = kernelAset(
+    [{ id: "X", start: "L", end: "U", tags: ["produced"] }],
+    { X: "produced X" },
+  );
+  const beforeAset = JSON.stringify(aset);
+  const base = ["R", "O", "C", "L", "U"];
+  const first = projectDebugStepVisualLinkNetwork(aset, { visibleLinkIds: base });
+  const produced = projectDebugStepVisualLinkNetwork(aset, { visibleLinkIds: [...base, "X"] });
+  const backward = projectDebugStepVisualLinkNetwork(aset, { visibleLinkIds: base });
+
+  validateVisualLinkNetwork(first);
+  validateVisualLinkNetwork(produced);
+  validateVisualLinkNetwork(backward);
+  assert.deepEqual(first.links.map(({ key }) => key), ["C", "L", "O", "R", "U"]);
+  assert.equal(first.links.some(({ key }) => key === "X"), false, "future link must not exist before production");
+  assert.equal(produced.links.some(({ key }) => key === "X"), true, "produced link must enter current topology");
+  assert.equal(backward.links.some(({ key }) => key === "X"), false, "backward step must remove future link again");
+  assert.equal(produced.links.find(({ key }) => key === "X")?.label, "produced X");
+
+  const producedKeys = new Set(produced.links.map(({ key }) => key));
+  for (const link of produced.links) {
+    assert.equal(producedKeys.has(link.startKey), true, `${link.key}.startKey must be current`);
+    assert.equal(producedKeys.has(link.endKey), true, `${link.key}.endKey must be current`);
+  }
+
+  assert.deepEqual(
+    topology(projectDebugStepVisualLinkNetwork(aset, null)),
+    topology(projectAsetToVisualLinkNetwork(aset)),
+    "Aset without debugger state must preserve full-network behavior",
+  );
+  assert.equal(JSON.stringify(aset), beforeAset, "step projection must not mutate semantic Aset input");
+});
+
+test("debug-step topology rejects unknown and non-reference-closed trace sets explicitly", () => {
+  const aset = kernelAset([{ id: "X", start: "L", end: "U" }]);
+  assert.throws(
+    () => projectDebugStepVisualLinkNetwork(aset, { visibleLinkIds: ["R", "ghost"] }),
+    /unknown.*ghost/i,
+  );
+  assert.throws(
+    () => projectDebugStepVisualLinkNetwork(aset, { visibleLinkIds: ["R", "X"] }),
+    /not reference-closed.*X.*(?:L|U)/i,
   );
 });
 
