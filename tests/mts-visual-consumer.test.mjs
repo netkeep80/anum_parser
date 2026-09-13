@@ -14,11 +14,11 @@ import {
 } from "../src/mts-visual-adapter.js";
 
 const EXPECTED_VISUAL_REPOSITORY = "netkeep80/mts_visual";
-const EXPECTED_VISUAL_COMMIT = "b4c29085f65e76e85dd49c74ed64cfa439366ab7";
-const EXPECTED_VISUAL_VERSION = "0.2.0";
+const EXPECTED_VISUAL_COMMIT = "4b7c8e97fab8d84a31783a4d8e422dcb12a4e795";
+const EXPECTED_VISUAL_VERSION = "0.3.0";
 const EXPECTED_VISUAL_ROOT = ".";
-const EXPECTED_VISUAL_MANIFEST_BLOB = "f17a2e119cd1e98110b5a36baa8535a435a03ac1";
-const EXPECTED_VISUAL_LOCKFILE_BLOB = "3446bedebbd0bbc00b676f97050083d17f02107b";
+const EXPECTED_VISUAL_MANIFEST_BLOB = "30647a915e8d2e5df8fa896b18596593468af5d4";
+const EXPECTED_VISUAL_LOCKFILE_BLOB = "a2ad851dbf618d62196227a448221da0e8c53077";
 const EXPECTED_CORE_COMMIT = "6b7f616c7b275310aebdbe998da13c5811c91391";
 
 function kernelAset(extraLinks = [], labels = {}, extra = {}) {
@@ -98,6 +98,7 @@ test("materialized @mts/visual exposes accepted public root and three entries", 
   assert.equal(typeof root.createLivePhysics3D, "function");
   assert.equal(typeof root.setLivePhysics3DOptions, "function");
   assert.equal(typeof root.snapshotLivePhysics3D, "function");
+  assert.equal(typeof root.transitionLivePhysics3DNetwork, "function");
   assert.equal(typeof root.createBlueprintInitialPositions, "function");
   assert.equal(typeof root.buildBlueprintGeometry, "function");
   assert.equal(typeof root.blueprintGeometryIsFinite, "function");
@@ -113,6 +114,7 @@ test("materialized @mts/visual exposes accepted public root and three entries", 
   assert.equal(typeof root.zoomBlueprintViewport, "function");
   assert.equal(typeof root.blueprintScreenToWorld, "function");
   assert.equal(typeof three.createVisualThreeLiveRenderer, "function");
+  assert.equal(typeof three.transitionVisualThreeLiveNetwork, "function");
   assert.equal(typeof three.setVisualThreeLivePaused, "function");
   assert.equal(typeof three.setVisualThreePresentation, "function");
   assert.equal(typeof three.getVisualThreeRendererSnapshot, "function");
