@@ -5,6 +5,7 @@ import {
   createInitialPhysics3DState,
   createLivePhysics3D,
   setLivePhysics3DOptions,
+  transitionLivePhysics3DNetwork,
 } from "../generated/mts-visual/index.js";
 import {
   createVisualThreeLiveRenderer,
@@ -13,10 +14,12 @@ import {
   resizeVisualThreeRenderer,
   setVisualThreeLivePaused,
   setVisualThreePresentation,
+  transitionVisualThreeLiveNetwork,
   zoomVisualThreeRenderer,
 } from "../generated/mts-visual/three/index.js";
 import {
   projectAsetToVisualLinkNetwork,
+  projectDebugStepVisualLinkNetwork,
   projectParserVisualPresentation,
 } from "./mts-visual-adapter.js";
 import {
@@ -46,6 +49,7 @@ const state = {
   debugStep: 0,
   graphView: "2d",
   visualNetwork: null,
+  visual3dNetwork: null,
   visualInitialState: null,
   visualLiveController: null,
   blueprintPositions: null,
@@ -226,6 +230,7 @@ function render() {
   renderTrace(trace);
   renderComparison();
   state.visualNetwork = projectAsetToVisualLinkNetwork(aset);
+  state.visual3dNetwork = null;
   state.visualInitialState = null;
   state.visualLiveController = null;
   state.blueprintPositions = null;
@@ -252,32 +257,60 @@ function currentDebugState() {
   return trace.length > 0 ? trace[state.debugStep] ?? null : null;
 }
 
+function currentShared3dNetwork() {
+  const aset = state.result?.aset;
+  return aset ? projectDebugStepVisualLinkNetwork(aset, currentDebugState()) : null;
+}
+
 function captureBlueprintPositions() {
   const snapshot = getBlueprintRendererSnapshot(ui.graph);
   if (snapshot?.positions) state.blueprintPositions = snapshot.positions;
 }
 
 function ensureShared3dController() {
-  state.visualNetwork ??= projectAsetToVisualLinkNetwork(state.result?.aset);
-  state.visualInitialState ??= createInitialPhysics3DState(state.visualNetwork);
-  state.visualLiveController ??= createLivePhysics3D(
-    state.visualNetwork,
-    state.visualInitialState,
-    state.physicsOptions,
-  );
+  const nextNetwork = currentShared3dNetwork();
+  if (!nextNetwork) throw new Error("3D network is unavailable");
+  const nextInitialState = createInitialPhysics3DState(nextNetwork);
+  if (state.visualLiveController) {
+    transitionLivePhysics3DNetwork(state.visualLiveController, nextNetwork);
+  } else {
+    state.visualLiveController = createLivePhysics3D(
+      nextNetwork,
+      nextInitialState,
+      state.physicsOptions,
+    );
+  }
+  state.visual3dNetwork = nextNetwork;
+  state.visualInitialState = nextInitialState;
   return state.visualLiveController;
 }
 
+function transitionMountedShared3dNetwork() {
+  if (state.graphView !== "3d" || !state.visualLiveController) return false;
+  const nextNetwork = currentShared3dNetwork();
+  if (!nextNetwork) return false;
+  const nextInitialState = createInitialPhysics3DState(nextNetwork);
+  if (!transitionVisualThreeLiveNetwork(ui.graph, nextNetwork)) {
+    throw new Error("@mts/visual/three: failed to transition mounted live network");
+  }
+  state.visual3dNetwork = nextNetwork;
+  state.visualInitialState = nextInitialState;
+  setVisualThreeLivePaused(ui.graph, state.physicsPaused);
+  return true;
+}
+
 function applyShared3dPresentation() {
-  if (state.graphView !== "3d" || !state.visualNetwork) return false;
-  if (state.selectedLinkId) ui.graph.dataset.selectedLink = state.selectedLinkId;
+  if (state.graphView !== "3d" || !state.visual3dNetwork) return false;
+  const known = new Set(state.visual3dNetwork.links.map(({ key }) => key));
+  const selectedKey = known.has(state.selectedLinkId) ? state.selectedLinkId : null;
+  if (selectedKey) ui.graph.dataset.selectedLink = selectedKey;
   else delete ui.graph.dataset.selectedLink;
   return setVisualThreePresentation(
     ui.graph,
     projectParserVisualPresentation(
-      state.visualNetwork,
+      state.visual3dNetwork,
       currentDebugState(),
-      state.selectedLinkId,
+      selectedKey,
     ),
   );
 }
@@ -294,7 +327,7 @@ function renderGraph() {
       destroyBlueprintRenderer(ui.graph);
       destroyGraph(ui.graph);
       const controller = ensureShared3dController();
-      createVisualThreeLiveRenderer(ui.graph, state.visualNetwork, controller, {
+      createVisualThreeLiveRenderer(ui.graph, state.visual3dNetwork, controller, {
         onActivateKey: (key) => {
           state.selectedLinkId = key;
           ui.graph.dataset.selectedLink = key;
@@ -387,9 +420,10 @@ function togglePhysicsPause() {
 }
 
 function resetCurrentPhysics() {
-  if (state.graphView !== "3d" || !state.visualNetwork || !state.visualInitialState) return;
+  if (state.graphView !== "3d" || !state.visual3dNetwork) return;
+  state.visualInitialState = createInitialPhysics3DState(state.visual3dNetwork);
   state.visualLiveController = createLivePhysics3D(
-    state.visualNetwork,
+    state.visual3dNetwork,
     state.visualInitialState,
     state.physicsOptions,
   );
@@ -563,8 +597,10 @@ function renderDebugger() {
     `добавлено: ${(item.producedLinks ?? []).join(", ") || "—"}`,
     `переиспользовано: ${(item.reusedLinks ?? []).join(", ") || "—"}`,
   ].join("\n");
-  if (state.graphView === "3d") applyShared3dPresentation();
-  else if (state.graphView === "blueprint") setBlueprintDebugState(ui.graph, item);
+  if (state.graphView === "3d") {
+    transitionMountedShared3dNetwork();
+    applyShared3dPresentation();
+  } else if (state.graphView === "blueprint") setBlueprintDebugState(ui.graph, item);
   else setGraphDebugState(ui.graph, item);
   updateTraceSelection();
 }

@@ -30,6 +30,48 @@ export function projectAsetToVisualLinkNetwork(aset) {
 }
 
 /**
+ * Project exactly the links that exist at one parser debugger step.
+ *
+ * `visibleLinkIds` is parser trace authority for current existence in the 3D
+ * world. Endpoint links are never pulled in implicitly: malformed trace state
+ * fails explicitly instead of allowing hidden future topology to leak in.
+ * Without debugger state (for example an imported Aset), the full projection is
+ * preserved.
+ */
+export function projectDebugStepVisualLinkNetwork(aset, debugState = null) {
+  const full = projectAsetToVisualLinkNetwork(aset);
+  if (debugState === null || typeof debugState !== "object") return full;
+  if (!Array.isArray(debugState.visibleLinkIds)) {
+    throw new Error("debug step visibleLinkIds must be an array");
+  }
+
+  const byKey = new Map(full.links.map((link) => [link.key, link]));
+  const wanted = new Set(debugState.visibleLinkIds);
+
+  for (const key of wanted) {
+    if (!byKey.has(key)) {
+      throw new Error(`debug step topology contains unknown VisualKey ${JSON.stringify(key)}`);
+    }
+  }
+
+  const currentLinks = full.links.filter((link) => wanted.has(link.key));
+  for (const link of currentLinks) {
+    if (!wanted.has(link.startKey)) {
+      throw new Error(
+        `debug step topology is not reference-closed: ${link.key}.startKey -> ${link.startKey}`,
+      );
+    }
+    if (!wanted.has(link.endKey)) {
+      throw new Error(
+        `debug step topology is not reference-closed: ${link.key}.endKey -> ${link.endKey}`,
+      );
+    }
+  }
+
+  return normalizeVisualLinkNetwork({ links: currentLinks });
+}
+
+/**
  * Convert parser-only debugger/selection roles into the generic presentation
  * vocabulary owned by @mts/visual. Unknown parser ids are deliberately ignored.
  */
