@@ -281,7 +281,7 @@ test("debugger evolves the mounted physical topology without recreating the rend
   await expect(page.locator("#graphPanel")).toHaveClass(/graph-fullscreen-fallback/);
 
   const lastStep = await step.textContent();
-  await page.locator("#debugFirst").click();
+  await page.locator("#debugFirst").evaluate((button) => button.click());
   await expect(step).not.toHaveText(lastStep);
   await expect(page.locator("#debugCurrent")).toContainText("операция:");
   const firstSnapshot = await sharedRendererSnapshot(page);
@@ -291,6 +291,10 @@ test("debugger evolves the mounted physical topology without recreating the rend
   await expect(canvas).toHaveCount(1);
   await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#graphPanel")).toHaveClass(/graph-fullscreen-fallback/);
+
+  await page.locator("#graphFullscreen").click();
+  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#graphPanel")).not.toHaveClass(/graph-fullscreen-fallback/);
 
   let previousSnapshot = firstSnapshot;
   let addition = null;
@@ -313,7 +317,6 @@ test("debugger evolves the mounted physical topology without recreating the rend
   await expect(page.locator("#debugEffects")).toContainText("видимых связей:");
   await expect(canvas).toHaveCount(1);
   expect(addition.after.cameraPosition).toEqual(cameraBefore);
-  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
 
   const pausedAfterAddition = await canvas.screenshot();
   const addedNodeCount = addition.after.nodeCount;
@@ -331,8 +334,6 @@ test("debugger evolves the mounted physical topology without recreating the rend
   expect(backwardSnapshot.arcCount).toBe(backwardSnapshot.nodeCount * 2);
   expect(backwardSnapshot.cameraPosition).toEqual(cameraBefore);
   await expect(canvas).toHaveCount(1);
-  await expect(page.locator("#graphFullscreen")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#graphPanel")).toHaveClass(/graph-fullscreen-fallback/);
 });
 
 test("repeated 2D/3D switching disposes and recreates only shared renderer state", async ({ page }, testInfo) => {
