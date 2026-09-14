@@ -50,7 +50,7 @@
     },
     "repo-guard-workflow": {
       "path": ".github/workflows/repo-guard.yml",
-      "sha": "be59be254eddf753e938f62ba1d749ec7a37fe8a"
+      "sha": "d66c8ecf7a696bc81055034fa5e47c4334ec8ce4"
     }
   },
   "content_rules": [
