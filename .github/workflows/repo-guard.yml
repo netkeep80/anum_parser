@@ -2,7 +2,7 @@ name: repo-guard policy check
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: ["**"]
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
 
       - name: Run repo-guard
         id: repo_guard
-        uses: netkeep80/repo-guard@d66c8ecf7a696bc81055034fa5e47c4334ec8ce4
+        uses: netkeep80/repo-guard@a2cb2ae98596c5b673eed2548abef40edcf4bdce
         with:
           mode: check-pr
           enforcement: blocking

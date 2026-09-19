@@ -20,6 +20,7 @@
     "governance_paths": [
       "repo-policy.json",
       ".github/workflows/repo-guard.yml",
+      ".github/workflows/trusted-enforcement.yml",
       ".github/PULL_REQUEST_TEMPLATE.md",
       ".github/ISSUE_TEMPLATE/change-contract.yml"
     ],
@@ -50,7 +51,7 @@
     },
     "repo-guard-workflow": {
       "path": ".github/workflows/repo-guard.yml",
-      "sha": "d66c8ecf7a696bc81055034fa5e47c4334ec8ce4"
+      "sha": "a2cb2ae98596c5b673eed2548abef40edcf4bdce"
     }
   },
   "content_rules": [
