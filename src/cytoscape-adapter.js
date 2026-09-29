@@ -1,5 +1,10 @@
 import { normalizeVisualLinkNetwork } from "../generated/mts-visual/index.js";
-import { SEMANTIC_COLORS } from "./visual-model.js";
+
+export const SEMANTIC_COLORS = Object.freeze({
+  start: "#ff657a",
+  center: "#67e8b3",
+  end: "#73a7ff",
+});
 
 export const START_LOOP_SWEEP_DEG = -65;
 export const END_LOOP_SWEEP_DEG = 65;
@@ -56,45 +61,6 @@ export function visualNetworkToCytoscapeElements(network, options = {}) {
         },
       });
     }
-  }
-
-  return elements;
-}
-
-export function visualModelToCytoscapeElements(visualModel, options = {}) {
-  const legacyPoleOrientation = options.legacyPoleOrientation === true;
-  const elements = [];
-
-  for (const node of visualModel?.nodes ?? []) {
-    elements.push({
-      data: {
-        id: node.id,
-        label: node.label,
-        linkId: node.linkId,
-        start: node.startId,
-        end: node.endId,
-        root: node.root ? "yes" : "no",
-      },
-    });
-  }
-
-  for (const arc of visualModel?.arcs ?? []) {
-    const source = legacyPoleOrientation
-      ? arc.linkId
-      : arc.semanticSource;
-    const target = legacyPoleOrientation
-      ? arc.poleId
-      : arc.semanticTarget;
-    elements.push({
-      data: {
-        id: arc.id,
-        source,
-        target,
-        linkId: arc.linkId,
-        role: arc.role,
-        label: arc.role === "start" ? "начало" : "конец",
-      },
-    });
   }
 
   return elements;
