@@ -19,7 +19,7 @@ const EXPECTED_VISUAL_VERSION = "0.3.0";
 const EXPECTED_VISUAL_ROOT = ".";
 const EXPECTED_VISUAL_MANIFEST_BLOB = "30647a915e8d2e5df8fa896b18596593468af5d4";
 const EXPECTED_VISUAL_LOCKFILE_BLOB = "a2ad851dbf618d62196227a448221da0e8c53077";
-const EXPECTED_CORE_COMMIT = "6b7f616c7b275310aebdbe998da13c5811c91391";
+const EXPECTED_CORE_COMMIT = "fcbc97e2279471c2c5effed57685c5f49ec856be";
 
 function kernelAset(extraLinks = [], labels = {}, extra = {}) {
   return {
@@ -78,7 +78,7 @@ test("visual presentation dependency is exact standalone and independent from se
   assert.equal(coreLock.schema, "anum-parser-mts-core-consumer-lock/v0.1");
   assert.equal(coreLock.commit, EXPECTED_CORE_COMMIT);
   assert.equal(coreLock.package.name, "@mts/core");
-  assert.equal(coreLock.accepted.contract.schema, "mts-contract/v0.11");
+  assert.equal(coreLock.accepted.contract.schema, "mts-contract/v0.14");
 
   assert.equal(provenance.repository, visualLock.repository);
   assert.equal(provenance.commit, visualLock.commit);
