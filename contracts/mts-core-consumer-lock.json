@@ -17,6 +17,12 @@
       "status": "accepted",
       "accepted": true,
       "coverageState": "complete"
+    },
+    "acceptance": {
+      "path": "cutover/typescript-c1-acceptance-v0.7.json",
+      "schema": "typescript-c1-acceptance/v0.7",
+      "decision": "ACCEPT_MTS_V0_14",
+      "downstreamRepinAllowed": true
     }
   },
   "package": {
