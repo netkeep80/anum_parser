@@ -13,8 +13,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const LOCK_PATH = resolve("contracts/mts-core-consumer-lock.json");
-const CURRENT_DIFFERENTIAL_PATH = resolve("contracts/mts-v011-differential.json");
-const PREVIOUS_DIFFERENTIAL_PATH = resolve("contracts/mts-v010-differential.json");
+const CURRENT_DIFFERENTIAL_PATH = resolve("contracts/mts-v014-differential.json");
+const PREVIOUS_DIFFERENTIAL_PATH = resolve("contracts/mts-v011-differential.json");
 const CORPUS_PATH = resolve("examples/cases.json");
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -76,6 +76,9 @@ function cloneAndPack(spec, label, scratch, npm) {
 
   const contract = readJson(join(source, spec.contractPath));
   const conformance = readJson(join(source, spec.conformancePath));
+  const acceptance = spec.acceptancePath
+    ? readJson(join(source, spec.acceptancePath))
+    : null;
   assertLockedDocument(contract, {
     schema: spec.contractSchema,
     status: "accepted",
@@ -114,7 +117,7 @@ function cloneAndPack(spec, label, scratch, npm) {
   const digest = sha256(artifact);
   assert.equal(digest, spec.digest, `${label}: @mts/core artifact SHA256 mismatch`);
 
-  return { source, artifact, digest, contract, conformance };
+  return { source, artifact, digest, contract, conformance, acceptance };
 }
 
 function observePackage(artifact, label, validSources, scratch, npm) {
@@ -155,61 +158,83 @@ function observePackage(artifact, label, validSources, scratch, npm) {
   return JSON.parse(run(process.execPath, ["observe.mjs"], consumer));
 }
 
-function verifyAcceptedV011(contract, conformance, differential) {
-  assert.equal(contract.schema, "mts-contract/v0.11");
+function verifyAcceptedV014(contract, conformance, acceptance, differential) {
+  assert.equal(contract.schema, "mts-contract/v0.14");
   assert.equal(contract.status, "accepted");
   assert.equal(contract.accepted, true);
   assert.equal(contract.acceptanceReady, true);
   assert.equal(contract.observableSemanticDelta, true);
-  assert.equal(contract.acceptedCurrent, "mts-contract/v0.11");
+  assert.deepEqual(contract.acceptedCurrent, {
+    contract: "mts-contract/v0.14",
+    conformance: "mts-conformance/v0.14",
+  });
+  assert.equal(contract.releaseState.currentAccepted, "mts-contract/v0.14");
+  assert.equal(contract.releaseState.previousAccepted, "mts-contract/v0.13");
   assert.equal(contract.implementation.package, "@mts/core");
   assert.equal(contract.implementation.publicFacade, "ts/src/public.ts");
+  assert.equal(contract.implementation.acceptedRuntime, "mts-contract/v0.14");
+  assert.equal(contract.implementation.singleLiveSemanticRuntime, true);
   assert.equal(contract.implementation.candidateRuntimeSelectable, false);
 
-  assert.deepEqual(contract.foundation.qAlphabet, ["[", "]", "1", "0"]);
-  assert.equal(contract.foundation.qAlphabetCount, 4);
-  assert.equal(contract.foundation.dotIsQAbit, false);
-  assert.equal(contract.foundation.colonIsQAbit, false);
-  assert.equal(contract.zeroContextGenesis.topLevelBinding, "TopBind(R,S)");
-  assert.equal(contract.zeroContextGenesis.topLevelDotResolution, "resolve_top(.) = R");
-  assert.equal(contract.dotPairGenesis.physicalSource, "..");
-  assert.equal(contract.dotPairGenesis.exactOccurrenceCount, 2);
-  assert.deepEqual(contract.dotPairGenesis.resolvedValuesAtRoot, ["R", "R"]);
-  assert.equal(contract.dotPairGenesis.exactSequencePreservesBothPositions, true);
-  assert.equal(contract.dotPairGenesis.semanticFoldAtRoot, "Pair(R,R) = R");
-  assert.equal(contract.contextualDuality.bindingForm, "A : E");
-  assert.equal(contract.contextualDuality.explicitResolution, "resolve_A(.) = A");
-  assert.equal(
-    contract.contextualDuality.nestedBinding,
-    "nearest structural A : E binds dot occurrences in E",
-  );
-  assert.deepEqual(contract.qBoundary.alphabet, ["[", "]", "1", "0"]);
-  assert.equal(contract.qBoundary.dotAdmitted, false);
-  assert.equal(contract.qBoundary.colonAdmitted, false);
-  assert.equal(contract.qBoundary.dotInsideQFormsAdmitted, false);
-  assert.equal(contract.qBoundary.contextualBinderInheritanceIntoQ, false);
+  assert.deepEqual(contract.q14Interpreter.alphabet, ["[", "]", "T", "F"]);
+  assert.equal(contract.q14Interpreter.acceptsLegacy10, false);
+  assert.equal(contract.q14Interpreter.mixedSourceAllowed, false);
+  assert.equal(contract.legacyQ13Compatibility.interpreter, "I_Q@v0.13");
+  assert.deepEqual(contract.legacyQ13Compatibility.alphabet, ["[", "]", "1", "0"]);
+  assert.equal(contract.legacyQ13Compatibility.immutable, true);
+  assert.equal(contract.legacyQ13Compatibility.acceptsTF, false);
+  assert.equal(contract.legacyQ13Compatibility.explicitVersionedTranscodeAllowed, true);
+  assert.equal(contract.legacyQ13Compatibility.transcodePreservesDenotation, true);
+  assert.equal(contract.legacyQ13Compatibility.transcodePreservesExactStringIdentity, false);
 
+  assert.equal(conformance.schema, "mts-conformance/v0.14");
   assert.equal(conformance.status, "accepted");
   assert.equal(conformance.accepted, true);
   assert.equal(conformance.acceptanceReady, true);
   assert.equal(conformance.coverageState, "complete");
-  assert.deepEqual(conformance.acceptanceBlockers, []);
+  assert.deepEqual(conformance.acceptedCurrent, {
+    contract: "mts-contract/v0.14",
+    conformance: "mts-conformance/v0.14",
+  });
+  assert.equal(conformance.requiredExecutableGates.length, 70);
+  assert.equal(conformance.plannedExecutableGates.length, 0);
 
-  const delta = differential.acceptedSemanticDelta;
-  assert.equal(delta.observableSemanticDelta, contract.observableSemanticDelta);
-  assert.equal(delta.topLevelBinding, contract.zeroContextGenesis.topLevelBinding);
-  assert.equal(delta.topLevelDotResolution, contract.zeroContextGenesis.topLevelDotResolution);
-  assert.equal(delta.dotPair.source, contract.dotPairGenesis.physicalSource);
-  assert.equal(delta.dotPair.exactOccurrenceCount, contract.dotPairGenesis.exactOccurrenceCount);
-  assert.deepEqual(delta.dotPair.resolvedValuesAtRoot, contract.dotPairGenesis.resolvedValuesAtRoot);
-  assert.equal(delta.dotPair.semanticFoldAtRoot, contract.dotPairGenesis.semanticFoldAtRoot);
-  assert.equal(delta.nestedExplicitBinding, contract.contextualDuality.nestedBinding);
-  assert.deepEqual(delta.qBoundary.alphabet, contract.qBoundary.alphabet);
-  assert.equal(delta.qBoundary.dotAdmitted, contract.qBoundary.dotAdmitted);
-  assert.equal(delta.qBoundary.colonAdmitted, contract.qBoundary.colonAdmitted);
+  assert.ok(acceptance, "accepted v0.14 consumer must bind the acceptance manifest");
+  assert.equal(acceptance.schema, "typescript-c1-acceptance/v0.7");
+  assert.equal(acceptance.decision, "ACCEPT_MTS_V0_14");
+  assert.equal(acceptance.versionDecision.acceptedVersion, "mts-contract/v0.14");
+  assert.equal(acceptance.versionDecision.previousAcceptedVersion, "mts-contract/v0.13");
+  assert.equal(acceptance.current.contract, "contracts/mts-contract-v0.14.json");
+  assert.equal(acceptance.current.conformance, "contracts/mts-conformance-v0.14.json");
+  assert.equal(acceptance.acceptance.typeScriptAccepted, true);
+  assert.equal(acceptance.acceptance.cutoverPerformed, true);
+  assert.equal(acceptance.acceptance.downstreamRepinAllowed, true);
+  assert.equal(acceptance.acceptance.singleLiveSemanticRuntime, true);
+  assert.equal(acceptance.acceptance.compatibilityRuntimeAllowed, false);
+
+  assert.equal(differential.acceptedSemanticDelta.currentAccepted, "mts-contract/v0.14");
+  assert.deepEqual(
+    differential.acceptedSemanticDelta.q14.alphabet,
+    contract.q14Interpreter.alphabet,
+  );
   assert.equal(
-    delta.qBoundary.contextualBinderInheritanceIntoQ,
-    contract.qBoundary.contextualBinderInheritanceIntoQ,
+    differential.acceptedSemanticDelta.q14.acceptsLegacy10,
+    contract.q14Interpreter.acceptsLegacy10,
+  );
+  assert.deepEqual(
+    differential.acceptedSemanticDelta.legacyQ13Compatibility.alphabet,
+    contract.legacyQ13Compatibility.alphabet,
+  );
+  assert.equal(
+    differential.acceptedSemanticDelta.legacyQ13Compatibility.immutable,
+    contract.legacyQ13Compatibility.immutable,
+  );
+  assert.equal(differential.qVersionBoundary.implicitTranscodeAllowed, false);
+  assert.equal(differential.qVersionBoundary.mixedSourceAllowed, false);
+  assert.equal(differential.qVersionBoundary.q14IsSeparateVersionedInterpreter, true);
+  assert.equal(
+    differential.qVersionBoundary.legacyQ13RemainsExecutablePublicCompatibilitySurface,
+    true,
   );
 }
 
@@ -228,13 +253,14 @@ assert.equal(lock.authority.deepSourceImportAllowed, false);
 assert.equal(lock.authority.vendoredCurrentSemanticSourceAllowed, false);
 assert.match(lock.package.sha256, SHA256);
 
-assert.equal(currentDifferential.schema, "anum-parser-mts-differential/v0.2");
-assert.equal(currentDifferential.issue, 46);
+assert.equal(currentDifferential.schema, "anum-parser-mts-differential/v0.3");
+assert.equal(currentDifferential.issue, 133);
 assert.equal(currentDifferential.currentConsumer.lockSchema, lock.schema);
 assert.equal(currentDifferential.currentConsumer.repository, lock.repository);
 assert.equal(currentDifferential.currentConsumer.commit, lock.commit);
 assert.equal(currentDifferential.currentConsumer.contract, lock.accepted.contract.schema);
 assert.equal(currentDifferential.currentConsumer.conformance, lock.accepted.conformance.schema);
+assert.equal(currentDifferential.currentConsumer.acceptance, lock.accepted.acceptance.schema);
 assert.equal(
   currentDifferential.currentConsumer.package,
   `${lock.package.name}@${lock.package.version}`,
@@ -250,16 +276,35 @@ assert.equal(currentDifferential.packageBoundary.rootImportRequired, true);
 assert.equal(currentDifferential.packageBoundary.deepImportRejected, true);
 assert.equal(currentDifferential.packageBoundary.packageVersionDistinguishesMtsRelease, false);
 
-assert.equal(previousDifferential.schema, "anum-parser-mts-differential/v0.1");
-assert.equal(currentDifferential.previousAcceptedConsumer.evidence, "contracts/mts-v010-differential.json");
+assert.equal(previousDifferential.schema, "anum-parser-mts-differential/v0.2");
+assert.equal(previousDifferential.issue, 46);
+assert.equal(currentDifferential.previousAcceptedConsumer.evidence, "contracts/mts-v011-differential.json");
 assert.equal(currentDifferential.previousAcceptedConsumer.immutable, true);
-assert.equal(previousDifferential.consumerLock.repository, currentDifferential.previousAcceptedConsumer.repository);
-assert.equal(previousDifferential.consumerLock.commit, currentDifferential.previousAcceptedConsumer.commit);
-assert.equal(previousDifferential.consumerLock.contract, currentDifferential.previousAcceptedConsumer.contract);
-assert.equal(previousDifferential.consumerLock.package, currentDifferential.previousAcceptedConsumer.package);
-assert.equal(previousDifferential.semanticExecution.status, "parity-required");
-assert.equal(previousDifferential.algorithmFailures.status, "parity-required");
-assert.equal(previousDifferential.candidatePolicy.v011AllowedAsCurrent, false);
+assert.equal(
+  previousDifferential.currentConsumer.repository,
+  currentDifferential.previousAcceptedConsumer.repository,
+);
+assert.equal(
+  previousDifferential.currentConsumer.commit,
+  currentDifferential.previousAcceptedConsumer.commit,
+);
+assert.equal(
+  previousDifferential.currentConsumer.contract,
+  currentDifferential.previousAcceptedConsumer.contract,
+);
+assert.equal(
+  previousDifferential.currentConsumer.conformance,
+  currentDifferential.previousAcceptedConsumer.conformance,
+);
+assert.equal(
+  previousDifferential.currentConsumer.package,
+  currentDifferential.previousAcceptedConsumer.package,
+);
+assert.equal(
+  previousDifferential.currentConsumer.artifactSha256,
+  currentDifferential.previousAcceptedConsumer.artifactSha256,
+);
+assert.equal(previousDifferential.proof.state, "proved-by-executable-ci");
 
 const acceptedCases = corpus.filter((item) =>
   item.format === "anum4" &&
@@ -281,6 +326,7 @@ const currentSpec = {
   conformanceSchema: lock.accepted.conformance.schema,
   contractPath: lock.accepted.contract.path,
   conformancePath: lock.accepted.conformance.path,
+  acceptancePath: lock.accepted.acceptance.path,
   packageName: lock.package.name,
   packageVersion: lock.package.version,
   packageRoot: lock.package.root,
@@ -304,21 +350,21 @@ const previousSpec = {
 const scratch = mkdtempSync(join(tmpdir(), "anum-parser-mts-repin-"));
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 try {
-  const current = cloneAndPack(currentSpec, "current-v011", scratch, npm);
-  const previous = cloneAndPack(previousSpec, "previous-v010", scratch, npm);
-  verifyAcceptedV011(current.contract, current.conformance, currentDifferential);
+  const current = cloneAndPack(currentSpec, "current-v014", scratch, npm);
+  const previous = cloneAndPack(previousSpec, "previous-v011", scratch, npm);
+  verifyAcceptedV014(current.contract, current.conformance, current.acceptance, currentDifferential);
 
-  const currentObserved = observePackage(current.artifact, "current-v011", validSources, scratch, npm);
-  const previousObserved = observePackage(previous.artifact, "previous-v010", validSources, scratch, npm);
+  const currentObserved = observePackage(current.artifact, "current-v014", validSources, scratch, npm);
+  const previousObserved = observePackage(previous.artifact, "previous-v011", validSources, scratch, npm);
   assert.deepEqual(
     currentObserved.denotations,
     previousObserved.denotations,
-    "accepted v0.11 changed the shared Q denotation corpus relative to accepted v0.10",
+    "accepted v0.14 changed the shared legacy Q13 denotation corpus relative to accepted v0.11",
   );
   assert.deepEqual(
     currentObserved.failures,
     previousObserved.failures,
-    "accepted v0.11 changed shared Q failure classes relative to accepted v0.10",
+    "accepted v0.14 changed shared legacy Q13 failure classes relative to accepted v0.11",
   );
   assert.equal(currentObserved.deepImportRejected, true);
   assert.equal(previousObserved.deepImportRejected, true);
@@ -390,7 +436,7 @@ try {
   console.log(`previous.artifact.sha256=${previous.digest}`);
   console.log(`differential.sharedQ.acceptedCases=${acceptedCases.length}`);
   console.log(`differential.sharedQ.failures=${SHARED_FAILURE_SOURCES.length}`);
-  console.log(`differential.v011Delta=${currentDifferential.acceptedSemanticDelta.consumerImpact}`);
+  console.log(`differential.v014Impact=${currentDifferential.acceptedSemanticDelta.consumerImpact}`);
   console.log(`differential.sourceBoundary=${currentDifferential.sourceFormatBoundary.classification}`);
   console.log(`producer-record=node ${lock.package.producer.node} / npm ${lock.package.producer.npm}`);
   console.log(`verifier-runtime=node ${process.versions.node} / npm ${run(npm, ["--version"], scratch)}`);

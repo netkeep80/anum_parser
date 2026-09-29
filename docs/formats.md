@@ -2,7 +2,7 @@
 
 Этот документ описывает текущие файловые границы `anum_parser`.
 
-Теоретическая норма МТС находится в `anum_docs`. Для accepted четверичного исполнения лаборатория использует exact-pinned `@mts/core@0.10.0` / MTS v0.10 из `contracts/mts-core-consumer-lock.json`.
+Теоретическая норма МТС находится в `anum_docs`. Для accepted исполнения лаборатория использует exact-pinned `@mts/core@0.10.0` / MTS v0.14 из `contracts/mts-core-consumer-lock.json`; сам `.anum4` остаётся явным legacy-Q13 форматом `[ ] 1 0`.
 
 Лабораторный id `anum-v0.4` — стабильный id десериализатора и не является номером текущего MTS release.
 
@@ -35,8 +35,9 @@ anum-v0.4
 Semantic authority:
 
 ```text
-MTS v0.10
+MTS v0.14
 @mts/core@0.10.0
+format surface = legacy Q13 [ ] 1 0
 ```
 
 Контрольные примеры:
@@ -330,11 +331,11 @@ carrier ⟼ denotation
     "kind": "exact-generated-package",
     "package": "@mts/core",
     "version": "0.10.0",
-    "contract": "mts-contract/v0.10",
-    "conformance": "mts-conformance/v0.10",
+    "contract": "mts-contract/v0.14",
+    "conformance": "mts-conformance/v0.14",
     "upstreamRepository": "netkeep80/anum_docs",
-    "upstreamCommit": "957c818d82bd3211f2a59547fff28e8ed0ec4331",
-    "artifactSha256": "0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007",
+    "upstreamCommit": "fcbc97e2279471c2c5effed57685c5f49ec856be",
+    "artifactSha256": "d8f183b0c6e7882b29ebe0c53eb97050ec392d990a82e7ac500fb896aa14afe3",
     "generatedTreeSha256": "<64 hex>",
     "consumerLock": "anum-parser-mts-core-consumer-lock/v0.1"
   },
@@ -450,22 +451,33 @@ anum-v0.4
 Текущий semantic authority:
 
 ```text
-MTS v0.10 / @mts/core@0.10.0
+MTS v0.14 / @mts/core@0.10.0
 ```
 
 Следующий MTS release должен переключаться только через explicit consumer repin.
 
-## 16. MTS v0.11 candidate boundary
+## 16. MTS v0.14: Q14 и legacy Q13
 
-На текущем observed `anum_docs` v0.11 остаётся candidate / NOT ACCEPTED:
+Текущий accepted upstream release — MTS v0.14. При этом версия семантического release и версия физического `.anum4` транспорта разделены.
+
+Контракт v0.14 фиксирует:
 
 ```text
-status = candidate
-accepted = false
-acceptanceReady = false
-candidateRuntimeSelectable = false
+Q14 alphabet         = [ ] T F
+Q14 accepts 1/0      = false
+legacy Q13 alphabet  = [ ] 1 0
+legacy Q13 immutable = true
+mixed source         = false
 ```
 
-Поэтому current file formats не объявляют top-level `.`/`TopBind` принятой `anum_parser` semantics и Q остаётся ровно `[ ] 1 0`.
+`anum_parser` не переименовывает свой `.anum4` в Q14 и не делает скрытый transcode. Текущий формат остаётся strict legacy Q13:
 
-После official upstream acceptance требуется отдельный migration slice с новым lock, package/artifact identity и executable evidence. До этого candidate не является production authority лаборатории.
+```text
+.anum4
+  -> exact [ ] 1 0
+  -> accepted v0.14 public @mts/core.executeAbits compatibility surface
+```
+
+Consumer lock связывает этот путь с exact v0.14 cutover commit, accepted contract/conformance/acceptance и SHA256 воспроизводимо собранного пакета. CI дополнительно сравнивает общий legacy-Q13 корпус с предыдущим exact v0.11 consumer.
+
+Если будущий release перестанет предоставлять эту public compatibility surface, migration должна упасть RED, а не молча менять смысл файла.
