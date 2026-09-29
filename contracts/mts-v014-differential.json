@@ -1,0 +1,106 @@
+{
+  "schema": "anum-parser-mts-differential/v0.3",
+  "issue": 133,
+  "currentConsumer": {
+    "lockSchema": "anum-parser-mts-core-consumer-lock/v0.1",
+    "repository": "netkeep80/anum_docs",
+    "commit": "fcbc97e2279471c2c5effed57685c5f49ec856be",
+    "contract": "mts-contract/v0.14",
+    "conformance": "mts-conformance/v0.14",
+    "acceptance": "typescript-c1-acceptance/v0.7",
+    "package": "@mts/core@0.10.0",
+    "artifactSha256": "d8f183b0c6e7882b29ebe0c53eb97050ec392d990a82e7ac500fb896aa14afe3"
+  },
+  "previousAcceptedConsumer": {
+    "evidence": "contracts/mts-v011-differential.json",
+    "immutable": true,
+    "repository": "netkeep80/anum_docs",
+    "commit": "6b7f616c7b275310aebdbe998da13c5811c91391",
+    "contract": "mts-contract/v0.11",
+    "conformance": "mts-conformance/v0.11",
+    "package": "@mts/core@0.10.0",
+    "artifactSha256": "6b4dbd701f46a6a339e20b892b8a5d9478bb40a9392415899291eb0fe30ddf9c"
+  },
+  "acceptedSemanticDelta": {
+    "status": "accepted-classified",
+    "observableSemanticDelta": true,
+    "currentAccepted": "mts-contract/v0.14",
+    "previousAccepted": "mts-contract/v0.13",
+    "legacyQ13Compatibility": {
+      "interpreter": "I_Q@v0.13",
+      "alphabet": [
+        "[",
+        "]",
+        "1",
+        "0"
+      ],
+      "immutable": true,
+      "acceptsTF": false
+    },
+    "q14": {
+      "alphabet": [
+        "[",
+        "]",
+        "T",
+        "F"
+      ],
+      "acceptsLegacy10": false,
+      "mixedSourceAllowed": false
+    },
+    "generalizedMpPreserved": true,
+    "consumerImpact": "accepted-v0.14-public-legacy-q13-path-preserved-versioned-q14-separate"
+  },
+  "semanticExecution": {
+    "localPath": "parseAnum4 -> anum-v0.4 -> current @mts/core.executeAbits",
+    "currentUpstreamPath": "validated legacy Q13 abits -> accepted v0.14 public @mts/core.executeAbits",
+    "previousUpstreamPath": "validated legacy Q13 abits -> accepted v0.11 @mts/core.executeAbits",
+    "acceptedCorpus": "examples/cases.json",
+    "acceptedCaseCount": 33,
+    "status": "current-vs-previous-parity-required"
+  },
+  "algorithmFailures": {
+    "status": "current-vs-previous-parity-required",
+    "mapping": "StreamError.code must remain identical on shared legacy Q13 failure corpus"
+  },
+  "qVersionBoundary": {
+    "laboratoryFormat": "legacy-q13",
+    "laboratoryAlphabet": [
+      "[",
+      "]",
+      "1",
+      "0"
+    ],
+    "acceptedCurrentQ14Alphabet": [
+      "[",
+      "]",
+      "T",
+      "F"
+    ],
+    "implicitTranscodeAllowed": false,
+    "mixedSourceAllowed": false,
+    "q14IsSeparateVersionedInterpreter": true,
+    "legacyQ13RemainsExecutablePublicCompatibilitySurface": true
+  },
+  "sourceFormatBoundary": {
+    "classification": "presentation-boundary-not-semantic-mismatch",
+    "localAnum4": "strict-literal-legacy-q13-abits-only",
+    "upstreamLegacyQ13Parser": "whitespace-and-comments-normalized",
+    "productionMigrationTarget": "strict local .anum4 validation -> exact legacy Q13 sequence -> accepted v0.14 public @mts/core.executeAbits"
+  },
+  "packageBoundary": {
+    "rootImportRequired": true,
+    "deepImportRejected": true,
+    "packageVersionDistinguishesMtsRelease": false,
+    "releaseIdentity": "exact source SHA + accepted contract/conformance/acceptance + artifact SHA256"
+  },
+  "proof": {
+    "state": "proved-by-executable-ci",
+    "currentArtifactDigestVerified": true,
+    "previousArtifactDigestVerified": true,
+    "sharedLegacyQ13SemanticParityRequired": true,
+    "sharedLegacyQ13FailureParityRequired": true,
+    "q14Q13BoundaryClassified": true,
+    "acceptedV014LifecycleRequired": true,
+    "previousEvidencePreserved": true
+  }
+}
