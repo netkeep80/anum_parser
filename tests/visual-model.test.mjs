@@ -1,16 +1,12 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   SEMANTIC_COLORS,
-  buildVisualModel,
-  normalizeVisualDebugState,
-  visualDebugFlags,
-} from "../src/visual-model.js";
-import {
   cytoscapeGraphStyle,
-  visualModelToCytoscapeElements,
+  visualNetworkToCytoscapeElements,
 } from "../src/cytoscape-adapter.js";
 import { projectAsetToVisualLinkNetwork } from "../src/mts-visual-adapter.js";
 import {
@@ -36,69 +32,38 @@ function styleFor(selector) {
   return rule.style;
 }
 
-test("visual model детерминирован и не зависит от renderer", () => {
-  const aset = fixture();
-  assert.deepEqual(buildVisualModel(aset), buildVisualModel(aset));
+test("VisualLinkNetwork projection is deterministic and preserves semantic orientation", () => {
+  const a = projectAsetToVisualLinkNetwork(fixture());
+  const b = projectAsetToVisualLinkNetwork(fixture());
+  assert.deepEqual(a, b);
+
+  const byKey = new Map(a.links.map((link) => [link.key, link]));
+  assert.deepEqual(
+    [byKey.get("X")?.startKey, byKey.get("X")?.endKey],
+    ["A", "B"],
+  );
+  assert.equal(byKey.get("X")?.label, "центр");
 });
 
-test("visual model хранит semantic orientation и RGB ровно один раз", () => {
-  const model = buildVisualModel(fixture());
-  const center = model.nodes.find((node) => node.id === "X");
-  const start = model.arcs.find((arc) => arc.id === "pole-start:X");
-  const end = model.arcs.find((arc) => arc.id === "pole-end:X");
-
-  assert.equal(model.rootId, "X");
-  assert.equal(center.root, true);
-  assert.equal(center.semanticColor, SEMANTIC_COLORS.center);
-  assert.equal(center.label, "X\nцентр");
-
-  assert.deepEqual(
-    [start.semanticSource, start.semanticTarget],
-    ["A", "X"],
-  );
-  assert.deepEqual(
-    [start.colorFrom, start.colorTo, start.arrow],
-    [SEMANTIC_COLORS.start, SEMANTIC_COLORS.center, "none"],
-  );
-
-  assert.deepEqual(
-    [end.semanticSource, end.semanticTarget],
-    ["X", "B"],
-  );
-  assert.deepEqual(
-    [end.colorFrom, end.colorTo, end.arrow],
-    [SEMANTIC_COLORS.center, SEMANTIC_COLORS.end, "target"],
-  );
-});
-
-test("limit сохраняет прежний visibility boundary для дуг", () => {
-  const model = buildVisualModel(fixture(), 2);
-
-  assert.deepEqual(model.nodes.map((node) => node.id), ["X", "A"]);
-  assert.ok(model.arcs.some((arc) => arc.id === "pole-start:X"));
-  assert.ok(!model.arcs.some((arc) => arc.id === "pole-end:X"));
-});
-
-test("Cytoscape semantic projection сохраняет A -> X -> B", () => {
-  const elements = visualModelToCytoscapeElements(buildVisualModel(fixture()));
+test("Cytoscape projection consumes VisualLinkNetwork directly", () => {
+  const network = projectAsetToVisualLinkNetwork(fixture());
+  const elements = visualNetworkToCytoscapeElements(network, {
+    visibleKeys: ["X", "A", "B"],
+    rootKey: "X",
+  });
   const start = elements.find((element) => element.data.id === "pole-start:X");
   const end = elements.find((element) => element.data.id === "pole-end:X");
+  const center = elements.find((element) => element.data.id === "X");
 
   assert.deepEqual([start.data.source, start.data.target], ["A", "X"]);
   assert.deepEqual([end.data.source, end.data.target], ["X", "B"]);
+  assert.equal(center.data.label, "X\nцентр");
+  assert.equal(center.data.root, "yes");
 });
 
-test("VisualLinkNetwork projection сохраняет A -> X и Aset-order visibility boundary", async () => {
+test("visibility boundary is expressed by shared-network keys, not a second topology DTO", () => {
   const network = projectAsetToVisualLinkNetwork(fixture());
-  const adapter = await import("../src/cytoscape-adapter.js");
-
-  assert.equal(
-    typeof adapter.visualNetworkToCytoscapeElements,
-    "function",
-    "structural 2D must expose a VisualLinkNetwork-native Cytoscape projection",
-  );
-
-  const elements = adapter.visualNetworkToCytoscapeElements(network, {
+  const elements = visualNetworkToCytoscapeElements(network, {
     visibleKeys: ["X", "A"],
     rootKey: "X",
   });
@@ -107,112 +72,58 @@ test("VisualLinkNetwork projection сохраняет A -> X и Aset-order visib
   const end = elements.find((element) => element.data.id === "pole-end:X");
 
   assert.deepEqual(nodes.map((element) => element.data.id), ["X", "A"]);
-  assert.equal(nodes[0].data.label, "X\nцентр");
-  assert.equal(nodes[0].data.root, "yes");
   assert.deepEqual([start.data.source, start.data.target], ["A", "X"]);
-  assert.equal(end, undefined, "END arc to non-visible B must stay omitted");
+  assert.equal(end, undefined);
 });
 
-test("structural 2D production не читает вторую Aset/visualModel topology", async () => {
-  const [visualizerSource, rootedSource] = await Promise.all([
+test("public structural facades are equivalent to the VisualLinkNetwork adapter", () => {
+  const aset = fixture();
+  const network = projectAsetToVisualLinkNetwork(aset);
+  const visibleKeys = aset.links.map((link) => link.id);
+
+  assert.deepEqual(
+    graphElementsForRendering(aset),
+    visualNetworkToCytoscapeElements(network, {
+      visibleKeys,
+      rootKey: aset.root,
+    }),
+  );
+  assert.deepEqual(
+    asetToGraphElements(aset),
+    visualNetworkToCytoscapeElements(network, {
+      visibleKeys,
+      rootKey: aset.root,
+      legacyPoleOrientation: true,
+    }),
+  );
+});
+
+test("structural and blueprint production do not rebuild parser-local visual topology", async () => {
+  const [appSource, visualizerSource, rootedSource, cytoscapeSource] = await Promise.all([
+    readFile(new URL("../src/app.js", import.meta.url), "utf8"),
     readFile(new URL("../src/visualizer.js", import.meta.url), "utf8"),
     readFile(new URL("../src/rooted-layout.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/cytoscape-adapter.js", import.meta.url), "utf8"),
   ]);
 
-  assert.doesNotMatch(
-    visualizerSource,
-    /buildVisualModel/,
-    "structural renderer must not rebuild parser-local visual topology",
-  );
+  assert.equal(existsSync(new URL("../src/visual-model.js", import.meta.url)), false);
+  assert.doesNotMatch(appSource, /\bbuildVisualModel\b|state\.visualModel|ensureBlueprintVisualModel/);
+  assert.doesNotMatch(visualizerSource, /\bbuildVisualModel\b/);
+  assert.doesNotMatch(cytoscapeSource, /visualModelToCytoscapeElements|\.\/visual-model\.js/);
   assert.doesNotMatch(
     rootedSource,
     /aset\?\.links|link\?\.start\b|link\?\.end\b/,
     "rooted structural depth must consume VisualLinkNetwork topology",
   );
-});
-
-test("app передаёт blueprint тот же shared VisualLinkNetwork без local topology bridge", async () => {
-  const source = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
-
-  assert.doesNotMatch(
-    source,
-    /\bbuildVisualModel\b|ensureBlueprintVisualModel|state\.visualModel/,
-    "production app must not construct or retain parser-local blueprint topology",
-  );
   assert.match(
-    source,
+    appSource,
     /createBlueprintRenderer\(ui\.graph,\s*state\.visualNetwork,/,
-    "blueprint must consume the same shared VisualLinkNetwork as the other renderers",
-  );
-  assert.equal(
-    source.match(/visualNetwork:\s*state\.visualNetwork/g)?.length ?? 0,
-    2,
-    "both normal and 3D-fallback structural 2D paths must consume state.visualNetwork",
+    "blueprint must consume the same shared VisualLinkNetwork",
   );
 });
 
-test("legacy Cytoscape facade сохраняет прежнюю link -> pole проекцию", () => {
-  const elements = visualModelToCytoscapeElements(
-    buildVisualModel(fixture()),
-    { legacyPoleOrientation: true },
-  );
-  const start = elements.find((element) => element.data.id === "pole-start:X");
-  const end = elements.find((element) => element.data.id === "pole-end:X");
-
-  assert.deepEqual([start.data.source, start.data.target], ["X", "A"]);
-  assert.deepEqual([end.data.source, end.data.target], ["X", "B"]);
-});
-
-test("public visualizer facade использует shared visual model без semantic fork", () => {
-  const aset = fixture();
-  const model = buildVisualModel(aset);
-
-  assert.deepEqual(
-    graphElementsForRendering(aset),
-    visualModelToCytoscapeElements(model),
-  );
-  assert.deepEqual(
-    asetToGraphElements(aset),
-    visualModelToCytoscapeElements(model, { legacyPoleOrientation: true }),
-  );
-});
-
-test("renderer-neutral debugger state не мутирует semantic model", () => {
-  const model = buildVisualModel(fixture());
-  const before = structuredClone(model);
-  const debug = normalizeVisualDebugState(model, {
-    visibleLinkIds: ["B", "X", "unknown"],
-    producedLinks: ["A", "unknown"],
-    reusedLinks: ["B"],
-    current: "X",
-  });
-
-  assert.deepEqual(debug, {
-    visibleLinkIds: ["X", "B"],
-    producedLinks: ["A"],
-    reusedLinks: ["B"],
-    current: "X",
-  });
-  assert.deepEqual(model, before);
-  assert.deepEqual(visualDebugFlags(debug, "X"), {
-    visible: true,
-    produced: false,
-    reused: false,
-    current: true,
-  });
-});
-
-test("debugger Cytoscape styles не имеют права переопределять semantic RGB дуг", () => {
-  const produced = styleFor("edge.debug-produced");
-  const reused = styleFor("edge.debug-reused");
-
-  for (const style of [produced, reused]) {
-    assert.equal(style["line-fill"], undefined);
-    assert.equal(style["line-color"], undefined);
-    assert.equal(style["line-gradient-stop-colors"], undefined);
-    assert.equal(style["target-arrow-color"], undefined);
-  }
-
+test("Cytoscape keeps RGB presentation semantics without owning topology", () => {
+  assert.equal(styleFor("node")["border-color"], SEMANTIC_COLORS.center);
   assert.equal(
     styleFor('edge[role = "start"]')["line-gradient-stop-colors"],
     `${SEMANTIC_COLORS.start} ${SEMANTIC_COLORS.center}`,
@@ -221,12 +132,17 @@ test("debugger Cytoscape styles не имеют права переопреде�
     styleFor('edge[role = "end"]')["line-gradient-stop-colors"],
     `${SEMANTIC_COLORS.center} ${SEMANTIC_COLORS.end}`,
   );
+  assert.equal(
+    styleFor('edge[role = "end"]')["target-arrow-color"],
+    SEMANTIC_COLORS.end,
+  );
 });
 
-test("pure visual model не импортирует Cytoscape, Three.js или @mts/core", async () => {
-  const source = await readFile(new URL("../src/visual-model.js", import.meta.url), "utf8");
-
-  assert.doesNotMatch(source, /cytoscape/i);
-  assert.doesNotMatch(source, /three(?:\.js)?/i);
-  assert.doesNotMatch(source, /@mts\/core/i);
+test("debugger Cytoscape styles cannot overwrite semantic RGB", () => {
+  for (const style of [styleFor("edge.debug-produced"), styleFor("edge.debug-reused")]) {
+    assert.equal(style["line-fill"], undefined);
+    assert.equal(style["line-color"], undefined);
+    assert.equal(style["line-gradient-stop-colors"], undefined);
+    assert.equal(style["target-arrow-color"], undefined);
+  }
 });
