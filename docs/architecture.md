@@ -5,12 +5,13 @@
 Текущая нормативная семантика находится **не в этом репозитории**, а в точно зафиксированном пакете `@mts/core` из `netkeep80/anum_docs`.
 
 ```text
-accepted MTS       = v0.11
+accepted MTS       = v0.14
 package            = @mts/core@0.10.0
-upstream SHA       = 6b7f616c7b275310aebdbe998da13c5811c91391
-contract           = mts-contract/v0.11
-conformance        = mts-conformance/v0.11
-artifact SHA256    = 6b4dbd701f46a6a339e20b892b8a5d9478bb40a9392415899291eb0fe30ddf9c
+upstream SHA       = fcbc97e2279471c2c5effed57685c5f49ec856be
+contract           = mts-contract/v0.14
+conformance        = mts-conformance/v0.14
+acceptance         = typescript-c1-acceptance/v0.7
+artifact SHA256    = d8f183b0c6e7882b29ebe0c53eb97050ec392d990a82e7ac500fb896aa14afe3
 consumer lock      = contracts/mts-core-consumer-lock.json
 ```
 
@@ -18,13 +19,13 @@ consumer lock      = contracts/mts-core-consumer-lock.json
 
 Лабораторный идентификатор `anum-v0.4` также сохранён для совместимости корпуса и интерфейса и **не является номером выпуска МТС**.
 
-Предыдущая принятая МТС v0.10 остаётся неизменяемым дифференциальным свидетельством:
+Предыдущий exact consumer v0.11 остаётся неизменяемым непосредственным дифференциальным свидетельством:
 
 ```text
-previous upstream SHA = 957c818d82bd3211f2a59547fff28e8ed0ec4331
-previous contract     = mts-contract/v0.10
-previous conformance  = mts-conformance/v0.10
-previous artifact     = 0cd716b65fcdcfb8ca31ec3899f1a812f0b4c9dbfe46bfc1f31899b762cde007
+previous upstream SHA = 6b7f616c7b275310aebdbe998da13c5811c91391
+previous contract     = mts-contract/v0.11
+previous conformance  = mts-conformance/v0.11
+previous artifact     = 6b4dbd701f46a6a339e20b892b8a5d9478bb40a9392415899291eb0fe30ddf9c
 ```
 
 ## 1. Главная граница доверия
@@ -85,7 +86,7 @@ scripts/materialize-mts-core.mjs
 
 `generated/` — только воспроизводимый результат сборки. Источником нормативной семантики остаётся принятый upstream-пакет, связанный с точным consumer lock.
 
-Отдельный verifier дополнительно материализует **два** принятых выпуска — предыдущий v0.10 и текущий v0.11 — чтобы доказать их наблюдаемое соотношение на общей Q-поверхности.
+Отдельный verifier дополнительно материализует **два** принятых выпуска — предыдущий v0.11 и текущий v0.14 — чтобы доказать их наблюдаемое соотношение на общей Q-поверхности.
 
 ## 3. Базовое тождество связи
 
@@ -113,9 +114,9 @@ A = C ∧ B = D
 - повторный `A ⟼ B` может переиспользовать существующую запись представления;
 - `R ⟼ R = R`.
 
-## 4. Корневой базис и четыре абита
+## 4. Корневой базис и versioned Q-поверхности
 
-Принятая МТС v0.11 сохраняет базис:
+Public legacy-Q13 execution сохраняет корневой базис, используемый лабораторией:
 
 ```text
 R = R ⟼ R
@@ -125,7 +126,7 @@ L = O ⟼ C
 U = C ⟼ O
 ```
 
-Четверичный транспорт:
+Лабораторный `.anum4` остаётся строгим legacy-Q13 транспортом:
 
 ```text
 [ -> O
@@ -134,15 +135,14 @@ U = C ⟼ O
 0 -> U
 ```
 
-Алфавит Q остаётся ровно:
+При этом принятая МТС v0.14 явно разделяет версии Q:
 
 ```text
-[ ] 1 0
+Q14        = [ ] T F
+legacy Q13 = [ ] 1 0
 ```
 
-`R = ∞` не является пятым абитом. Контекстные знаки `.` и `:` также не являются Q-абитами.
-
-Это важно для v0.11: новый принятый контекстный смысл не расширяет физический `.anum4`-транспорт лаборатории.
+Q14 не принимает legacy `1/0`, legacy Q13 не принимает `T/F`, смешанный source запрещён. Допустим только явный versioned transcode; `anum_parser` его автоматически не выполняет. `R = ∞`, контекстные `.`/`:` и рекурсивный алфавит `8/9/6/1` не являются дополнительными знаками `.anum4`.
 
 ## 5. Строгий `.anum4` как граница представления
 
@@ -297,7 +297,7 @@ local presentation projection
 experimental local semantics
 ```
 
-Для текущего результата `contract/conformance/upstreamCommit/artifactSha256` указывают именно на принятый v0.11 release, даже при сохранённом package version `0.10.0`.
+Для текущего результата `contract/conformance/upstreamCommit/artifactSha256` указывают именно на принятый v0.14 release, даже при сохранённом package version `0.10.0`.
 
 ## 11. Пошаговый отладчик и визуализация
 
@@ -344,23 +344,23 @@ CI имеет две независимые поверхности.
 Отдельный verifier выполняет:
 
 ```text
-previous exact source = v0.10 / 957c818d...
-current exact source  = v0.11 / 6b7f616c...
+previous exact source = v0.11 / 6b7f616c...
+current exact source  = v0.14 / fcbc97e2...
 rebuild both
 npm pack both
 verify both artifact SHA256
 consume through package root
 reject deep source import
-compare shared Q corpus
-compare shared Q failure classes
-verify accepted v0.11 contract/conformance obligations
+verify v0.14 contract + conformance + acceptance v0.7
+verify Q14 [ ] T F / legacy Q13 [ ] 1 0 separation
+compare shared legacy-Q13 corpus
+compare shared legacy-Q13 failure classes
+run local accepted projection against current v0.14 package
 ```
 
-Общий Q-корпус содержит 33 принятых случая из `examples/cases.json`. Для них предыдущий v0.10, текущий v0.11 и локальная проекция текущего runtime должны давать одинаковый наблюдаемый денотат.
+Общий корпус содержит 33 принятых `.anum4` случая. Для них предыдущий v0.11, текущий v0.14 public legacy-Q13 runtime и локальная проекция текущего runtime должны давать одинаковый наблюдаемый денотат.
 
-Отдельно сравниваются общие классы ошибок четверичного исполнения. Строгость локального `.anum4` остаётся классифицированной границей представления, а не семантическим расхождением.
-
-V0.11-специфические контекстные обязательства не подменяются Q-дифференциалом: verifier отдельно требует их из принятого upstream-контракта и корпуса соответствия.
+Отдельно сравниваются общие классы ошибок. Строгость локального `.anum4` остаётся границей представления. Verifier также требует, чтобы acceptance manifest разрешал downstream repin и чтобы Q14/Q13 не смешивались неявно.
 
 ## 14. GitHub Pages
 
@@ -374,40 +374,32 @@ generated/
 package.json
 ```
 
-Таким образом браузерный сайт, обычный CI и consumer verifier используют одну и ту же текущую фиксацию v0.11. Предыдущая v0.10 материализуется только внутри дифференциальной проверки как неизменяемое свидетельство.
+Таким образом браузерный сайт, обычный CI и consumer verifier используют одну и ту же текущую фиксацию v0.14. Предыдущий exact consumer v0.11 материализуется только внутри дифференциальной проверки как неизменяемое свидетельство.
 
-## 15. Принятая граница МТС v0.11
+## 15. Принятая граница МТС v0.14
 
-В upstream v0.11 принята как текущий выпуск:
+Upstream v0.14 является текущим принятым выпуском:
 
 ```text
-status = accepted
+contract = mts-contract/v0.14
+conformance = mts-conformance/v0.14
+acceptance = typescript-c1-acceptance/v0.7
 accepted = true
 acceptanceReady = true
-coverageState = complete
-acceptanceBlockers = []
+requiredExecutableGates = 70
+downstreamRepinAllowed = true
 ```
 
-Её наблюдаемое изменение включает:
+Для этой лаборатории наиболее важен versioned representation boundary:
 
-```text
-TopBind(R,S)
-top-level . -> R
-.. -> ExactSequence([R,R]) -> Pair(R,R)=R
-nearest structural A:E binding
-Q alphabet = [ ] 1 0
-```
+- current Q14: `[ ] T F`;
+- immutable legacy Q13: `[ ] 1 0`;
+- `.anum4` остаётся строгим legacy-Q13 форматом;
+- implicit transcode и mixed Q13/Q14 source запрещены;
+- accepted execution приходит только из public `@mts/core`, не из локальной второй машины;
+- exact v0.14 legacy-Q13 поведение сравнивается с предыдущим v0.11 consumer.
 
-Архитектурное следствие для `anum_parser` состоит не в добавлении второй контекстной машины. Лаборатория:
-
-- переключает нормативное происхождение на точный принятый v0.11 artifact;
-- сохраняет текущий `.anum4` как Q-путь `[ ] 1 0`;
-- не вводит `.` или `:` в Q;
-- не реализует локально `TopBind(R,S)` или вложенную `A:E`-привязку;
-- проверяет эти принятые свойства по upstream contract/conformance evidence;
-- доказывает наблюдаемую совместимость общей Q-поверхности с предыдущим точным v0.10 runtime.
-
-Поэтому принятие v0.11 не размывает границу ответственности потребителя: новая семантика принадлежит `anum_docs`, а `anum_parser` только точно фиксирует и проверяет принятую зависимость.
+Более широкие законы v0.14 — ориентация контекста, разделение representation layers, generalized-MP non-regression и другие принятые положения — принадлежат `anum_docs`. `anum_parser` фиксирует release identity и проверяет только те наблюдаемые границы, которые реально потребляет.
 
 ## 16. Граница с `anum_docs`
 
@@ -433,7 +425,7 @@ consumer verification
 differential previous/current evidence
 ```
 
-Главный архитектурный инвариант после v0.11 repin:
+Главный архитектурный инвариант после v0.14 repin:
 
 ```text
 anum_parser does not define current MTS semantics locally
@@ -443,7 +435,7 @@ anum_parser does not define current MTS semantics locally
 
 ```text
 exact upstream SHA
-accepted contract/conformance
+accepted contract/conformance/acceptance
 exact artifact SHA256
 consumer lock
 previous/current differential proof
@@ -453,181 +445,53 @@ canonical docs
 
 ## 17. Blueprint-проекция связей
 
-Режим `graphView = blueprint` расположен полностью после построения `Aset` и общей модели `visualModel`:
+Blueprint расположен полностью после семантической границы:
 
 ```text
 accepted Aset
-  -> visualModel
-  -> pure blueprint geometry
-  -> one SVG path per semantic link
+  -> projectAsetToVisualLinkNetwork
+  -> VisualLinkNetwork
+  -> @mts/visual createBlueprintInitialPositions/buildBlueprintGeometry
+  -> parser-owned SVG DOM/lifecycle
 ```
+
+`VisualLinkNetwork` — единственная production topology-модель визуализации. Старый parser-local topology DTO физически удалён.
 
 ### Семантическая граница
 
-Blueprint не вводит обычную графовую модель «узел + два ребра». В МТС связь остаётся первичной единой сущностью:
+Связь `X = start(X) ⟼ end(X)` остаётся одной первичной сущностью. Центр в blueprint — точка представления той же связи, а не отдельный семантический узел. Геометрия, цвет, selection, drag, pan/zoom и debugger-state не меняют `Aset`, denotation или `semanticAuthority`.
 
-```text
-X = start(X) ⟼ end(X)
-```
+### Shared geometry authority
 
-Начало и конец сами являются связями. Центр `X` в blueprint — только точка представления на **той же самой связи**. Он нужен для размещения и для закрепления других связей, которые ссылаются на `X`, но не является отдельным семантическим узлом и не делит `X` на две связи.
+Exact-pinned `@mts/visual` владеет общей blueprint-геометрией, C¹ spline construction, semantic anchors, finite self-link handling, palette и viewport math. `anum_parser` владеет только DOM lifecycle и consumer-specific presentation glue.
 
-### Происхождение геометрии
+Accepted observable contract:
 
-Геометрическая идея адаптирована из `konard/links-visuals` по точному снимку `f377441533e4f10fa94aaa07138b684df88234b1`, опубликованному под лицензией `Unlicense`.
-
-Зафиксированы следующие источники:
-
-- `animated-blueprint.html` и `js/path.mjs` — гладкий сплайн Catmull–Rom → cubic Bézier;
-- `js/blueprint-link.mjs` и `js/markers.mjs` — форма меток начала и конца;
-- `docs/case-studies/issue-28/README.md` — многосвязная визуализация сохраняет геометрию одиночной связи и различает связи собственными цветами;
-- `konard/links-visuals#31` — исторический контекст визуализации связей между связями и ограничений обычного подхода «узлы/рёбра».
-
-### Единая кривая и C¹
-
-Pure geometry строит для каждой связи упорядоченную цепочку:
-
-```text
-start, p1, p2, p3, center, p4, p5, p6, end
-```
-
-Из неё одним проходом касательных формируются восемь кубических сегментов Bézier и **один** путь. В строке пути ровно один начальный `M`; центр не создаёт второй `M` и не является швом.
-
-Для каждой соседней пары сегментов в общей точке `P` действует проверяемый инвариант C¹:
-
-```text
-S_i(1) = P = S_{i+1}(0)
-S_i'(1)     = 3(P - C2_i)
-S_{i+1}'(0) = 3(C1_{i+1} - P)
-S_i'(1) = S_{i+1}'(0)
-```
-
-Он проверяется для всех внутренних стыков, отдельно для центрального стыка `segments[3] / segments[4]`, а также для самопетли. Поэтому отсутствие излома в центре — математический контракт, а не визуальная оценка по снимку экрана.
-
-### Цвет и метки полюсов
-
-Для `N` семантических связей средство отрисовки создаёт ровно `N` путей. Каждой связи назначается собственный детерминированный цвет по стабильному порядку `visualModel.nodes`. Один и тот же цвет используется для всей кривой, метки начала и метки конца.
-
-Метка начала использует поперечную исходную черту, а метка конца — открытую двухлинейную стрелку, адаптированные из upstream. Выбор и состояние отладчика могут менять подсветку, прозрачность, фильтр или акцент обводки, но не должны перекрашивать саму связь.
-
-Цвет blueprint является только свойством представления. Он не входит в тождество связи, не зависит от технического адреса как источника смысла и не является `semanticAuthority`.
-
-Общий контракт `RED -> GREEN -> BLUE` **не применяется к blueprint**. Он остаётся отдельным контрактом других проекций там, где уже принят, в частности живой 3D-механики.
-
-### Закрепление полюсов и интерактивность
-
-Для связи `X`:
-
-```text
-startAnchor(X) = center(start(X))
-endAnchor(X)   = center(end(X))
-```
-
-Перетаскивание центра меняет только координаты представления. Все зависимые начала и концы пересчитываются из уже существующих `startId/endId`; семантическая `Aset` не изменяется. Панорамирование, масштабирование, вписывание, выбор и состояние отладчика также относятся только к представлению.
-
-Средство отрисовки использует локальный `SVG` без отдельной зависимости от D3. Геометрический модуль не импортирует Cytoscape, Three.js или `@mts/core`: он получает готовый `visualModel` и возвращает только геометрию.
-
-### Жизненный цикл и браузерное свидетельство
-
-При выходе из `blueprint` снимаются обработчики событий, удаляется его `SVG` и очищается локальное состояние средства отрисовки. Повторные циклы `2D -> blueprint -> 3D -> 2D` не должны накапливать графические поверхности или обработчики. Отказ WebGL относится только к 3D: после резервного возврата в структурный 2D blueprint должен оставаться доступным.
-
-Браузерный контракт проверяет одновременно:
-
-- `N` связей → ровно `N` путей;
-- единственный `M` и восемь кубических сегментов в базовой форме связи;
-- C¹ во всех внутренних стыках, включая центр и самопетлю;
-- точное закрепление начала и конца на центрах связей, заданных `startId/endId`;
-- разные стабильные цвета базовых `R/O/C/L/U` и совпадение цвета пути с обеими метками полюсов;
-- сохранение цвета после перетаскивания, вписывания, изменения размера, выбора, работы отладчика и повторного входа;
-- сохранение непрерывности и закрепления полюсов после перетаскивания;
-- отсутствие накопления ресурсов при смене представлений;
-- неизменность сериализованной `Aset` при всех визуальных действиях.
+- one semantic Link → one SVG path;
+- START/END anchors совпадают с центрами соответствующих Link;
+- C¹ continuity сохраняется на внутренних стыках и в центре;
+- self-start/self-end/full-self остаются конечными и невырожденными;
+- fixed cubic-count не является API invariant;
+- движение центра детерминированно repin'ит зависимые пути;
+- selection/debugger могут менять акцент, но не semantic topology;
+- повторные переключения view не накапливают SVG/listeners;
+- serialized `Aset` остаётся неизменной.
 
 ## 18. Живая 3D-механическая проекция
 
-Живой 3D-режим находится целиком **после** семантической границы. Его конвейер:
+3D также находится целиком после semantic boundary:
 
 ```text
 accepted Aset
-  -> visualModel
-  -> deterministic readable 3D layout
-  -> livePhysicalSimulation3d
-  -> Three.js renderer
+  -> projectAsetToVisualLinkNetwork
+  -> VisualLinkNetwork
+  -> @mts/visual createInitialPhysics3DState
+  -> @mts/visual createLivePhysics3D
+  -> @mts/visual/three renderer
 ```
 
-Ни `livePhysicalSimulation3d`, ни Three.js renderer не имеют права менять `links`, тождество связей, denotation, trace или `semanticAuthority`. Во время интерактивной работы меняются только механические и presentation-состояния:
+Standalone `@mts/visual` является единственной production authority для initial 3D state, live physics, Three.js scene/picking/drag и topology transition. Старые parser-local 3D geometry/physics/renderer modules физически удалены.
 
-```text
-positions / velocities
-physics options
-pinned nodes during drag
-camera
-selection / hover
-fullscreen presentation
-```
+Debugger-step 3D использует реальную reference-closed current-step `VisualLinkNetwork`: будущие связи отсутствуют в physics model до своего шага, а не маскируются поверх final topology. `Next/Prev` меняют shared network topology с сохранением mounted renderer/camera/controls там, где это допускает shared API.
 
-### Механические инварианты
-
-- root всегда зафиксирован в `(0,0,0)`;
-- self-loop остаётся видимым, но исключён из набора силовых пружин;
-- начало связи имеет градиент `RED -> GREEN`;
-- конец связи имеет градиент `GREEN -> BLUE`;
-- две касательные, выходящие из GREEN-центра одной связи, строго противоположны на 180° в истинном 3D;
-- semantic RGB не используется для кодирования debugger state.
-
-### Wake / sleep
-
-Пользовательский drag и изменение параметров физики будят существующую simulation. `pause` прекращает physics integration, но не уничтожает renderer и не запрещает навигацию камерой. После `settleWindow` устойчивых шагов simulation переходит в sleep и больше не планирует лишние physics ticks.
-
-Изменение камеры через OrbitControls вызывает только пересчёт presentation LOD и render. Оно не будит уснувшую физику и не меняет координаты механической асети.
-
-`reset` создаёт новое механическое состояние из сохранённой исходной детерминированной 3D-раскладки и нулевых скоростей, сохраняя presentation selection и сам renderer.
-
-### Renderer lifecycle и ресурсы
-
-Один live tick не пересоздаёт renderer или scene. Динамические пружины и LOD могут заменять `BufferGeometry`, но старая геометрия перед заменой обязательно освобождается через `dispose()`.
-
-`destroy3dRenderer` является полной lifecycle-границей. Он обязан:
-
-- отменить активный `requestAnimationFrame`;
-- отключить `ResizeObserver`;
-- снять listener OrbitControls и вызвать `dispose()` controls;
-- снять pointer/touch listeners и освободить pointer capture;
-- освободить geometry/material scene objects;
-- освободить WebGL renderer;
-- удалить canvas и label layer;
-- удалить renderer state из локального `WeakMap`.
-
-Поэтому повторные циклы `2D -> 3D -> 2D` не должны накапливать canvas, label layers, observers, listeners или RAF.
-
-### Fullscreen
-
-Fullscreen является только изменением presentation workspace. Используется native Fullscreen API, а при его недоступности — CSS viewport fallback. В обоих вариантах остаются теми же:
-
-```text
-renderer
-scene
-camera
-selected link
-live simulation
-physics parameters
-pause state
-```
-
-Переход вызывает только `resize3dRenderer` и не требует повторной десериализации или пересоздания semantic/physical state. Выход доступен кнопкой и `Esc`.
-
-### Browser-level контракт
-
-Browser acceptance проверяет интеграционно, что:
-
-- drag свободной связи передаёт возмущение другим свободным узлам, а root остаётся в origin;
-- charge, spring stiffness и damping применяются live;
-- pause/resume/reset не меняют semantic Aset;
-- reset воспроизводим;
-- settled simulation засыпает, а camera-only navigation не будит её;
-- fullscreen resize/exit сохраняет текущую асеть, renderer, selection и physics state;
-- повторные fullscreen и `2D <-> 3D` циклы не накапливают renderer resources;
-- debugger и обычный selection продолжают работать поверх 3D;
-- отказ WebGL чисто возвращает structural 2D.
-
-Это фиксирует конечную архитектурную границу: live 3D — исследовательская механическая проекция уже существующей асети, а не альтернативное вычисление МТС.
+UI-параметры физики, pause/reset, drag, camera, fullscreen, selection и fallback относятся только к presentation/mechanical state. Они не имеют права менять semantic `links`, identity, denotation, trace или `semanticAuthority`. При destroy/switch shared renderer lifecycle обязан освобождать графические ресурсы и listeners; browser acceptance проверяет отсутствие накопления ресурсов и корректный fallback в structural 2D.
