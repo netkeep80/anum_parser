@@ -10,6 +10,8 @@ import {
   evaluateRussianFirstMarkdown,
   PACKAGE_EVIDENCE_KEY,
   README_EVIDENCE_KEY,
+  GOVERNANCE_EVIDENCE_KEY,
+  REPO_GUARD_SHA,
   PROVIDER_SOURCE,
 } from "../scripts/repo-guard-provider.mjs";
 
@@ -155,6 +157,80 @@ describe("#135 accepted provider adapter", () => {
       assert.equal(domain?.status, "fail");
       const observation = bundle.claims.find((claim) => claim.boundary === "observation" && claim.path === "README.md");
       assert.equal(typeof observation?.value, "number");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits authenticated governance evidence only from exact accepted integration", () => {
+    const root = fixture();
+    try {
+      mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+      mkdirSync(join(root, "scripts"), { recursive: true });
+      writeFileSync(join(root, ".github", "workflows", "repo-guard.yml"), [
+        "jobs:",
+        "  policy-check:",
+        "    steps:",
+        "      - uses: actions/checkout@v6",
+        "      - name: Run repo-guard",
+        `        uses: netkeep80/repo-guard@${REPO_GUARD_SHA}`,
+        "        with:",
+        "          mode: check-pr",
+        "          enforcement: blocking",
+        "",
+      ].join("\n"));
+      writeFileSync(join(root, ".github", "workflows", "trusted-enforcement.yml"), [
+        "on:",
+        "  pull_request_target:",
+        "  issues:",
+        "    types: [edited]",
+        "jobs:",
+        "  trusted:",
+        "    steps:",
+        `      - uses: netkeep80/repo-guard@${REPO_GUARD_SHA}`,
+        "        with:",
+        "          authenticated-provider-bundle: bundle-one",
+        "      - run: node scripts/repo-guard-provider.mjs",
+        `      - uses: netkeep80/repo-guard@${REPO_GUARD_SHA}`,
+        "        with:",
+        "          authenticated-provider-bundle: bundle-two",
+        "      - run: node scripts/repo-guard-provider.mjs",
+        "        env:",
+        "          RG_EVENT_PATH: refresh.json",
+        "      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1",
+        "",
+      ].join("\n"));
+      writeFileSync(join(root, "scripts", "repo-guard-provider.mjs"), "export const accepted = true;\n");
+      git(root, "add", "-A");
+      git(root, "commit", "-m", "governance base");
+      const base = git(root, "rev-parse", "HEAD");
+
+      writeFileSync(join(root, ".github", "workflows", "repo-guard.yml"),
+        execFileSync("git", ["show", base + ":.github/workflows/repo-guard.yml"], { cwd: root, encoding: "utf8" }) + "# touch\n");
+      const head = commit(root, "governance touch");
+      const bundle = buildProviderBundle({
+        repository: "netkeep80/anum_parser",
+        eventBaseRevision: base,
+        eventHeadRevision: head,
+        repositoryRoot: root,
+      });
+      const domain = bundle.claims.find((claim) => claim.boundary === "domain" && claim.key === GOVERNANCE_EVIDENCE_KEY);
+      assert.equal(domain?.status, "pass");
+      assert.deepEqual(domain?.subjectPaths, [".github/workflows/repo-guard.yml"]);
+
+      git(root, "checkout", "-q", "-B", "bad", base);
+      const bad = execFileSync("git", ["show", base + ":.github/workflows/repo-guard.yml"], { cwd: root, encoding: "utf8" })
+        .replace(REPO_GUARD_SHA, "a".repeat(40));
+      writeFileSync(join(root, ".github", "workflows", "repo-guard.yml"), bad);
+      const badHead = commit(root, "break exact pin");
+      const invalid = buildProviderBundle({
+        repository: "netkeep80/anum_parser",
+        eventBaseRevision: base,
+        eventHeadRevision: badHead,
+        repositoryRoot: root,
+      });
+      const invalidDomain = invalid.claims.find((claim) => claim.boundary === "domain" && claim.key === GOVERNANCE_EVIDENCE_KEY);
+      assert.equal(invalidDomain?.status, "fail");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
