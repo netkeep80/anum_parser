@@ -16,6 +16,8 @@ relations:
     target: { kind: artifact, path: "repo-policy.json" }
   - predicates: [verified_by]
     target: { kind: artifact, path: "tests/repo-guard-provider.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/repo-guard-native-pilot.test.mjs" }
 constraints:
   - id: repo-guard-integration-domain
     activation: scoped_change
