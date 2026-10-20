@@ -1,0 +1,20 @@
+format: repo-guard/requirement-v1
+id: ANP-MTS
+normative: "Accepted MTS semantic execution MUST come from the exact accepted @mts/core consumer identity and its preserved differential evidence; floating, candidate, deep-source or vendored-current semantic authority MUST NOT replace that identity."
+relations:
+  - predicates: [documents]
+    target: { kind: artifact, path: "contracts/mts-core-consumer-lock.json" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "contracts/mts-v010-differential.json" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "contracts/mts-v011-differential.json" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "contracts/mts-v014-differential.json" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "docs/architecture.md" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "scripts/materialize-mts-core.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "scripts/verify-mts-core-consumer.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/mts-runtime.test.mjs" }
