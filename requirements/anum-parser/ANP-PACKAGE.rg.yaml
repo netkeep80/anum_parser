@@ -1,0 +1,19 @@
+format: repo-guard/requirement-v1
+id: ANP-PACKAGE
+normative: "When application package metadata changes, package.json and the root package-lock metadata MUST change together, expose valid SemVer, keep both lock mirrors equal to the manifest version, and strictly advance the accepted version."
+relations:
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "package.json" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "package-lock.json" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/repo-guard-provider.test.mjs" }
+constraints:
+  - id: package-metadata-domain
+    activation: scoped_change
+    scope:
+      relations: [implemented_by]
+      include_generated: false
+    evidence:
+      class: domain
+      key: "domain:package-metadata-consistency"
