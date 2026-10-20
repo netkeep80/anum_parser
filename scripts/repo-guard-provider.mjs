@@ -8,8 +8,16 @@ export const PROVIDER_FORMAT = "repo-guard/provider-bundle-v1";
 export const PROVIDER_SOURCE = "scripts/repo-guard-provider.mjs";
 export const PACKAGE_REQUIREMENT = "ANP-PACKAGE";
 export const README_REQUIREMENT = "ANP-README";
+export const GOVERNANCE_REQUIREMENT = "ANP-GOVERNANCE";
 export const PACKAGE_EVIDENCE_KEY = "domain:package-metadata-consistency";
 export const README_EVIDENCE_KEY = "domain:readme-russian-first";
+export const GOVERNANCE_EVIDENCE_KEY = "domain:repo-guard-integration";
+export const REPO_GUARD_SHA = "cdf6a8938ff54d6e94eb200d8233fef1f317f254";
+export const GOVERNANCE_PATHS = Object.freeze([
+  ".github/workflows/repo-guard.yml",
+  ".github/workflows/trusted-enforcement.yml",
+  PROVIDER_SOURCE,
+]);
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -210,6 +218,33 @@ export function evaluateReadme(headRevision, cwd = process.cwd()) {
   }
 }
 
+export function evaluateRepoGuardIntegration(headRevision, cwd = process.cwd()) {
+  const reasons = [];
+  try {
+    const ordinary = readAt(headRevision, ".github/workflows/repo-guard.yml", cwd);
+    const trusted = readAt(headRevision, ".github/workflows/trusted-enforcement.yml", cwd);
+    const exactUse = "uses: netkeep80/repo-guard@" + REPO_GUARD_SHA;
+    if (!ordinary.includes(exactUse)) reasons.push("ordinary_repo_guard_pin_mismatch");
+    if (!/\bmode:\s*check-pr\b/.test(ordinary)) reasons.push("ordinary_repo_guard_mode_mismatch");
+    if (!/\benforcement:\s*blocking\b/.test(ordinary)) reasons.push("ordinary_repo_guard_not_blocking");
+
+    const trustedUses = trusted.split(exactUse).length - 1;
+    if (trustedUses < 2) reasons.push("trusted_repo_guard_pin_missing");
+    if (!/pull_request_target:/.test(trusted)) reasons.push("trusted_pull_request_target_missing");
+    if (!/issues:\s*\n\s*types:\s*\[edited\]/.test(trusted)) reasons.push("linked_issue_refresh_missing");
+    if ((trusted.match(/authenticated-provider-bundle:/g) || []).length < 2)
+      reasons.push("authenticated_provider_bundle_not_wired_for_both_paths");
+    if ((trusted.match(/scripts\/repo-guard-provider\.mjs/g) || []).length < 2)
+      reasons.push("accepted_provider_not_wired_for_both_paths");
+    if (!/RG_EVENT_PATH:/.test(trusted)) reasons.push("refresh_event_projection_missing");
+    if (!trusted.includes("actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1"))
+      reasons.push("dedicated_status_producer_pin_mismatch");
+  } catch (error) {
+    reasons.push("repo_guard_integration_unreadable:" + (error instanceof Error ? error.message : String(error)));
+  }
+  return { ok: reasons.length === 0, reasons };
+}
+
 export function buildProviderBundle({
   repository,
   eventBaseRevision,
@@ -262,6 +297,27 @@ export function buildProviderBundle({
       path: "README.md",
       value: changedLines(eventBaseRevision, eventHeadRevision, "README.md", repositoryRoot),
     });
+  }
+
+  const governanceTouched = GOVERNANCE_PATHS.filter((path) => touched.has(path));
+  if (governanceTouched.length > 0) {
+    const result = evaluateRepoGuardIntegration(eventHeadRevision, repositoryRoot);
+    claims.push({
+      boundary: "domain",
+      class: "domain",
+      key: GOVERNANCE_EVIDENCE_KEY,
+      requirementId: GOVERNANCE_REQUIREMENT,
+      subjectPaths: governanceTouched,
+      status: result.ok ? "pass" : "fail",
+    });
+    for (const path of governanceTouched) {
+      claims.push({
+        boundary: "observation",
+        metric: "git.changed_lines",
+        path,
+        value: changedLines(eventBaseRevision, eventHeadRevision, path, repositoryRoot),
+      });
+    }
   }
 
   return {
