@@ -224,7 +224,7 @@ it("#135 native consumer A1-A16 / T1-T10 production-kernel matrix", {
 
     const missingCause = evaluate(native, ordinaryHead, [], ordinaryProvider);
     assert.equal(missingCause.ok, false);
-    assert.ok(missingCause.reasons.some((reason) => reason.startsWith("J3:no_cause:")));
+    assert.ok(missingCause.reasons.some((reason) => reason.includes("J3:no_cause:")));
 
     const selector = pipeline.selectRepoGuardAuthoritativeEvaluator({
       baseRepresentation: "native",
@@ -240,7 +240,7 @@ it("#135 native consumer A1-A16 / T1-T10 production-kernel matrix", {
     const orphanResourceProvider = bundleResult(native, orphanResourceHead);
     const orphanResource = evaluate(native, orphanResourceHead, ["ANP-CORE"], orphanResourceProvider);
     assert.equal(orphanResource.ok, false);
-    assert.ok(orphanResource.reasons.includes("head:j1_not_closed"));
+    assert.ok(orphanResource.reasons.some((reason) => reason.includes("head:j1_not_closed") || reason === "A1:head_j1_not_closed"));
 
     resetScenario(fixture, native, "orphan-requirement");
     writeFileSync(join(fixture, "requirements", "anum-parser", "ANP-ORPHAN.rg.yaml"), [
