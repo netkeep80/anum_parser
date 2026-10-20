@@ -1,0 +1,29 @@
+format: repo-guard/requirement-v1
+id: ANP-GOVERNANCE
+normative: "Repository acceptance MUST use an exact immutable RepoGuard revision and accepted-source trusted enforcement; candidate metadata is not TRUST, authenticated provider evidence is produced only by the accepted workflow, and linked-issue same-HEAD refresh MUST preserve the same security inputs and verdict."
+relations:
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: ".github/workflows/repo-guard.yml" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: ".github/workflows/trusted-enforcement.yml" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "scripts/repo-guard-provider.mjs" }
+  - predicates: [documents]
+    target: { kind: artifact, path: ".github/ISSUE_TEMPLATE/change-contract.yml" }
+  - predicates: [documents]
+    target: { kind: artifact, path: ".github/PULL_REQUEST_TEMPLATE.md" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "repo-policy.json" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/repo-guard-provider.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/repo-guard-native-pilot.test.mjs" }
+constraints:
+  - id: repo-guard-integration-domain
+    activation: scoped_change
+    scope:
+      relations: [implemented_by]
+      include_generated: false
+    evidence:
+      class: domain
+      key: "domain:repo-guard-integration"

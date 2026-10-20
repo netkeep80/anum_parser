@@ -1,0 +1,8 @@
+format: repo-guard/requirement-v1
+id: ANP-DISTRIBUTION
+normative: "The tracked repository MUST retain its public-domain licensing boundary and keep reproducibly generated dependency/runtime output outside version control."
+relations:
+  - predicates: [documents]
+    target: { kind: artifact, path: "LICENSE" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: ".gitignore" }

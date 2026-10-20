@@ -1,0 +1,14 @@
+format: repo-guard/requirement-v1
+id: ANP-HISTORY
+normative: "Accepted design history, debugging records and portfolio context MUST remain retained as non-authoritative provenance; historical material documents decisions but does not create current semantic or TRUST authority."
+relations:
+  - predicates: [documents]
+    target: { kind: artifact, path: "PORTFOLIO.md" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "docs/history.md" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "docs/superpowers/plans/2026-09-11-repo-guard-version-ci-implementation.md" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "docs/superpowers/plans/2026-09-13-debugger-3d-current-topology.md" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "docs/superpowers/specs/2026-09-11-repo-guard-version-ci-design.md" }
