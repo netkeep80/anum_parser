@@ -1,0 +1,38 @@
+format: repo-guard/requirement-v1
+id: ANP-VISUAL
+normative: "2D and 3D presentation MUST visualize the accepted laboratory model without becoming semantic authority, while visual dependencies remain exact and reproducibly materialized."
+relations:
+  - predicates: [documents]
+    target: { kind: artifact, path: "contracts/mts-visual-consumer-lock.json" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "docs/visualization-2d-3d.md" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "scripts/materialize-mts-visual.mjs" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "scripts/materialize-three.mjs" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/blueprint-renderer.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/cytoscape-adapter.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/layout-postprocessor.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/mts-visual-adapter.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/rooted-crossing.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/rooted-layout.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/visualizer.js" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/layout-postprocessor.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/mts-visual-consumer.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/rooted-layout.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/visual-model.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/visualizer-debugger.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/visualizer.test.mjs" }

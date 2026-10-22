@@ -1,46 +1,25 @@
-name: Контракт изменения
-description: Предложить изменение с ChangeIntent и, при необходимости, отдельным GovernanceGrant.
+name: Предложение изменения
+description: Опишите потребность и наблюдаемые критерии приёмки без специальных управляющих grants.
 title: "[change] "
 body:
   - type: textarea
-    id: description
+    id: objective
     attributes:
-      label: Описание
-      description: Что меняется и зачем?
+      label: Проблема или цель
+      description: Что и зачем требуется изменить?
     validations:
       required: true
   - type: textarea
-    id: contract
+    id: acceptance
     attributes:
-      label: ChangeIntent
-      description: Обычное намерение изменения. Этот блок сам по себе не даёт управляющих разрешений.
-      value: |
-        ```repo-guard-yaml
-        change_type: feature
-        scope:
-          - src/**
-        budgets: {}
-        anchors:
-          affects: []
-          implements: []
-          verifies: []
-        must_touch: []
-        must_not_touch: []
-        expected_effects:
-          - Опишите ожидаемый эффект
-        ```
+      label: Проверяемый результат
+      description: Какие наблюдения или тесты подтвердят результат?
     validations:
       required: true
   - type: textarea
-    id: governance_grant
+    id: context
     attributes:
-      label: GovernanceGrant (только для управляющих изменений)
-      description: Оставьте пустым для обычной задачи. Grant доверяется только из связанной задачи, никогда из PR.
-      value: |
-        ```repo-guard-grant
-        authorized_governance_paths:
-          - repo-policy.json
-        allow_policy_relaxation: []
-        ```
+      label: Контекст и ограничения
+      description: Ссылки на требования, связанные решения и риски.
     validations:
       required: false
