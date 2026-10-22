@@ -25,10 +25,13 @@ jobs:
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           HEAD_SHA="$(git rev-parse HEAD)"
-          BASE_SHA="${PR_BASE_SHA:-$HEAD_SHA}"
+          BASE_SHA="${PR_BASE_SHA:-${PUSH_BEFORE_SHA:-$HEAD_SHA}}"
+          # A8: exact immutable Git inputs; prohibit arbitrary PR-provided base changes.
+          [[ "$BASE_SHA" =~ ^[a-f0-9]{40}$ ]]
           git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
           PIN="$(node -e 'const p=require("./.repo-guard/compiler-pin.json");process.stdout.write(p.sha)')"
           [[ "$PIN" =~ ^[a-f0-9]{40}$ ]]
@@ -43,6 +46,11 @@ jobs:
           export REPO_GUARD_CLI="$COMPILER_DIR/dist/repo-guard.mjs"
           COMPILER_BASE="$BASE_SHA"
           if ! git cat-file -e "$BASE_SHA:requirements/anum-parser/ANP-CORE.rg.yaml" 2>/dev/null; then
+            # One-time bootstrap is restricted to the actual accepted legacy main.
+            if [ "$BASE_SHA" != "679f79e8f1692bd88cdebf38c16b97950437afd2" ]; then
+              echo "DENIED: native compiler bootstrap cannot bypass an arbitrary legacy BASE" >&2
+              exit 1
+            fi
             COMPILER_BASE="$HEAD_SHA"
             echo 'BOOTSTRAP SHADOW: legacy BASE has no native Requirements; HEAD-only J1/J2 is not a cutover J3 proof'
           fi

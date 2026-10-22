@@ -150,7 +150,7 @@ export function evaluatePackageMetadata(baseRevision, headRevision, touchedPaths
     if (parseSemver(baseVersion) === null) reasons.push("base_version_not_semver");
     if (parseSemver(headVersion) === null) reasons.push("head_version_not_semver");
     const comparison = compareSemver(headVersion, baseVersion);
-    if (comparison === null || comparison <= 0) reasons.push("version_must_strictly_advance");
+    if (comparison === null || comparison < 0 || (headVersion !== baseVersion && comparison === 0)) reasons.push("version_must_strictly_advance");
     if (headLock?.version !== headVersion) reasons.push("lock_root_version_mismatch");
     if (headLock?.packages?.[""]?.version !== headVersion) reasons.push("lock_package_version_mismatch");
   } catch (error) {

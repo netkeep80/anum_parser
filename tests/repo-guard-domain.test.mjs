@@ -36,5 +36,15 @@ test("package + lock transaction: positive, stale mirror and missing cochange",(
     put("package.json",pkg("0.5.9"));git("add","-A");git("commit","-m","package only");
     const alone=git("rev-parse","HEAD");
     assert.equal(evaluatePackageMetadata(stale,alone,changedPaths(stale,alone,root),root).ok,false);
+    // A11: metadata transaction is legitimate without inventing a version bump.
+    // npm ci in the main project CI remains the authoritative dependency integrity verifier.
+    put("package.json",{...pkg("0.5.9"),description:"new package description"});
+    put("package-lock.json",{...lock("0.5.9"),packages:{"":{name:"fixture",version:"0.5.9",description:"new package description"}}});
+    git("add","-A");git("commit","-m","consistent dependency metadata transaction");
+    const consistent=git("rev-parse","HEAD");
+    assert.equal(evaluatePackageMetadata(alone,consistent,changedPaths(alone,consistent,root),root).ok,true);
+    put("package-lock.json",lock("0.5.8"));git("add","-A");git("commit","-m","stale lock mirror");
+    const mismatch=git("rev-parse","HEAD");
+    assert.equal(evaluatePackageMetadata(consistent,mismatch,changedPaths(consistent,mismatch,root),root).ok,false);
   }finally{rmSync(root,{recursive:true,force:true});}
 });

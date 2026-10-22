@@ -1,6 +1,6 @@
 format: repo-guard/requirement-v1
 id: ANP-PACKAGE
-normative: "When application package metadata changes, package.json and the root package-lock metadata MUST change together, expose valid SemVer, keep both lock mirrors equal to the manifest version, and strictly advance the accepted version."
+normative: "When application package metadata changes, package.json and the root package-lock metadata MUST change together, expose valid SemVer, keep both lock mirrors equal to the manifest version, and strictly advance the accepted version whenever the version itself changes. Dependency-only transactions MAY preserve the version."
 relations:
   - predicates: [implemented_by]
     target: { kind: artifact, path: "package.json" }
