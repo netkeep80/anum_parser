@@ -79,8 +79,12 @@ checkCase("stale_lock_package_mirror",dir=>modifyBoth(dir,(p,l)=>{ver(p,l,"0.5.8
  {legacy:false,native:false},"preserve nested lock mirror");
 checkCase("semver_downgrade",dir=>modifyBoth(dir,(p,l)=>ver(p,l,"0.5.6")),
  {legacy:false,native:false},"preserve valid advance");
-checkCase("readme_russian",dir=>save(dir,"README.md",read(dir,"README.md")+"\nДополнительное описание проверки.\n"),
- {legacy:true,native:true},"preserve language pass");
+checkCase("readme_only_no_version_bump",dir=>save(dir,"README.md",read(dir,"README.md")+"\nДополнительное описание проверки.\n"),
+ {legacy:false,native:true},"intentional removal of unconditional version bump");
+checkCase("readme_russian_with_version_bump",dir=>{save(dir,"README.md",read(dir,"README.md")+"\nДополнительное описание проверки.\n");modifyBoth(dir,(p,l)=>ver(p,l,"0.5.8"));},
+ {legacy:true,native:true},"isolated language pass with legacy version obligation satisfied");
+checkCase("readme_english_with_version_bump",dir=>{save(dir,"README.md",read(dir,"README.md")+"\nEnglish-only explanatory sentence.\n");modifyBoth(dir,(p,l)=>ver(p,l,"0.5.8"));},
+ {legacy:false,native:false},"isolated language failure with legacy version obligation satisfied");
 checkCase("readme_english",dir=>save(dir,"README.md",read(dir,"README.md")+"\nEnglish-only explanatory sentence.\n"),
  {legacy:false,native:false},"preserve language violation");
 checkCase("metadata_without_version_bump",dir=>modifyBoth(dir,(p,l)=>{p.description+=" уточнение";l.packages[""].description=p.description}),
