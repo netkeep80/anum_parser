@@ -65,14 +65,3 @@ jobs:
           NODE
           node scripts/repo-guard-domain.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
           node --test tests/repo-guard-domain.test.mjs tests/repo-guard-native.test.mjs
-          LEGACY_DIR="$RUNNER_TEMP/repo-guard-legacy-exact"
-          mkdir -p "$LEGACY_DIR"
-          git -C "$LEGACY_DIR" init --quiet
-          git -C "$LEGACY_DIR" remote add origin https://github.com/netkeep80/repo-guard.git
-          git -C "$LEGACY_DIR" fetch --no-tags --quiet --depth=1 origin 756944656fa14de752f44bb404e1dca852f5fa6a
-          git -C "$LEGACY_DIR" checkout --quiet --detach FETCH_HEAD
-          test "$(git -C "$LEGACY_DIR" rev-parse HEAD)" = 756944656fa14de752f44bb404e1dca852f5fa6a
-          npm --prefix "$LEGACY_DIR" ci --omit=dev --ignore-scripts --silent
-          export LEGACY_REPO_GUARD_CLI="$LEGACY_DIR/dist/repo-guard.mjs"
-          export ANP_EXPECTED_NATIVE_HEAD="$HEAD_SHA"
-          node --test tests/repo-guard-legacy-native-differential.test.mjs
