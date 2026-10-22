@@ -44,17 +44,7 @@ jobs:
           test "$(git -C "$COMPILER_DIR" rev-parse HEAD)" = "$PIN"
           npm --prefix "$COMPILER_DIR" ci --omit=dev --ignore-scripts --silent
           export REPO_GUARD_CLI="$COMPILER_DIR/dist/repo-guard.mjs"
-          COMPILER_BASE="$BASE_SHA"
-          if ! git cat-file -e "$BASE_SHA:requirements/anum-parser/ANP-CORE.rg.yaml" 2>/dev/null; then
-            # One-time bootstrap is restricted to the actual accepted legacy main.
-            if [ "$BASE_SHA" != "679f79e8f1692bd88cdebf38c16b97950437afd2" ]; then
-              echo "DENIED: native compiler bootstrap cannot bypass an arbitrary legacy BASE" >&2
-              exit 1
-            fi
-            COMPILER_BASE="$HEAD_SHA"
-            echo 'BOOTSTRAP SHADOW: legacy BASE has no native Requirements; HEAD-only J1/J2 is not a cutover J3 proof'
-          fi
-          node "$REPO_GUARD_CLI" --repo-root "$GITHUB_WORKSPACE" check --base "$COMPILER_BASE" --head "$HEAD_SHA" --format json > "$RUNNER_TEMP/repo-guard-native.json"
+          node "$REPO_GUARD_CLI" --repo-root "$GITHUB_WORKSPACE" check --base "$BASE_SHA" --head "$HEAD_SHA" --format json > "$RUNNER_TEMP/repo-guard-native.json"
           cat "$RUNNER_TEMP/repo-guard-native.json"
           node --input-type=module - "$RUNNER_TEMP/repo-guard-native.json" <<'NODE'
           import {readFileSync} from 'node:fs';
