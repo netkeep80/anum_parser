@@ -1,37 +1,67 @@
-name: repo-guard policy check
+name: RepoGuard native compiler
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: ["**"]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
-  issues: read
-  pull-requests: read
 
 jobs:
-  policy-check:
-    name: repo-guard blocking check
+  native:
+    name: repo-guard-native
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Run repo-guard
-        id: repo_guard
-        uses: netkeep80/repo-guard@756944656fa14de752f44bb404e1dca852f5fa6a
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v6
         with:
-          mode: check-pr
-          enforcement: blocking
           node-version: 24
+      - name: Evaluate exact native compiler and project domain checks
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish repo-guard summary
-        if: always()
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          echo "repo-guard result: ${{ steps.repo_guard.outputs.result }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.repo_guard.outputs.summary }}" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          BASE_SHA="${PR_BASE_SHA:-${PUSH_BEFORE_SHA:-$HEAD_SHA}}"
+          # A8: exact immutable Git inputs; prohibit arbitrary PR-provided base changes.
+          [[ "$BASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+          PIN="$(node -e 'const p=require("./.repo-guard/compiler-pin.json");process.stdout.write(p.sha)')"
+          [[ "$PIN" =~ ^[a-f0-9]{40}$ ]]
+          COMPILER_DIR="$RUNNER_TEMP/repo-guard-exact"
+          mkdir -p "$COMPILER_DIR"
+          git -C "$COMPILER_DIR" init --quiet
+          git -C "$COMPILER_DIR" remote add origin https://github.com/netkeep80/repo-guard.git
+          git -C "$COMPILER_DIR" fetch --no-tags --quiet --depth=1 origin "$PIN"
+          git -C "$COMPILER_DIR" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$COMPILER_DIR" rev-parse HEAD)" = "$PIN"
+          npm --prefix "$COMPILER_DIR" ci --omit=dev --ignore-scripts --silent
+          export REPO_GUARD_CLI="$COMPILER_DIR/dist/repo-guard.mjs"
+          COMPILER_BASE="$BASE_SHA"
+          if ! git cat-file -e "$BASE_SHA:requirements/anum-parser/ANP-CORE.rg.yaml" 2>/dev/null; then
+            # One-time bootstrap is restricted to the actual accepted legacy main.
+            if [ "$BASE_SHA" != "679f79e8f1692bd88cdebf38c16b97950437afd2" ]; then
+              echo "DENIED: native compiler bootstrap cannot bypass an arbitrary legacy BASE" >&2
+              exit 1
+            fi
+            COMPILER_BASE="$HEAD_SHA"
+            echo 'BOOTSTRAP SHADOW: legacy BASE has no native Requirements; HEAD-only J1/J2 is not a cutover J3 proof'
+          fi
+          node "$REPO_GUARD_CLI" --repo-root "$GITHUB_WORKSPACE" check --base "$COMPILER_BASE" --head "$HEAD_SHA" --format json > "$RUNNER_TEMP/repo-guard-native.json"
+          cat "$RUNNER_TEMP/repo-guard-native.json"
+          node --input-type=module - "$RUNNER_TEMP/repo-guard-native.json" <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
+          if(!r.ok||!r.j1.head||!r.j2.head||r.j1.justified!==r.j1.tracked){
+            console.error('Native closure not GREEN');process.exit(1);
+          }
+          NODE
+          node scripts/repo-guard-domain.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
+          node --test tests/repo-guard-domain.test.mjs tests/repo-guard-native.test.mjs

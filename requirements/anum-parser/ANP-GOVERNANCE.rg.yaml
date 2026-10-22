@@ -1,0 +1,25 @@
+format: repo-guard/requirement-v1
+id: ANP-GOVERNANCE
+normative: "The repository MUST evaluate exact versioned Git states with an immutable pinned RepoGuard compiler through ordinary CI, without a RepoGuard-specific App, service, secret or privileged status. A proposed PR and its checks are not independent human acceptance; Git platform permissions and reviews are separate."
+relations:
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: ".github/workflows/repo-guard.yml" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: ".repo-guard/compiler-pin.json" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "scripts/repo-guard-domain.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/repo-guard-native.test.mjs" }
+  - predicates: [documents]
+    target: { kind: artifact, path: ".github/ISSUE_TEMPLATE/change-contract.yml" }
+  - predicates: [documents]
+    target: { kind: artifact, path: ".github/PULL_REQUEST_TEMPLATE.md" }
+constraints:
+  - id: pinned-compiler-evidence
+    activation: scoped_change
+    scope:
+      relations: [implemented_by]
+      include_generated: false
+    evidence:
+      class: domain
+      key: "domain:compiler-pin"

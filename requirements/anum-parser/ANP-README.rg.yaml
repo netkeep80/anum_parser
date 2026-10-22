@@ -1,0 +1,19 @@
+format: repo-guard/requirement-v1
+id: ANP-README
+normative: "README.md prose MUST remain Russian-first under the accepted technical-term allowance; code fences, links and explicitly foreign-language spans are not prose violations."
+relations:
+  - predicates: [documents]
+    target: { kind: artifact, path: "README.md" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "scripts/repo-guard-domain.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/repo-guard-domain.test.mjs" }
+constraints:
+  - id: readme-russian-first-domain
+    activation: scoped_change
+    scope:
+      relations: [documents]
+      include_generated: false
+    evidence:
+      class: domain
+      key: "domain:readme-russian-first"

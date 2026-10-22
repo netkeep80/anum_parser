@@ -1,0 +1,26 @@
+format: repo-guard/requirement-v1
+id: ANP-CORE
+normative: "The laboratory MUST preserve its explicit carrier, model, format, parser and serializer behavior against the executable accepted corpus; implementation changes remain free when those observable contracts stay valid."
+relations:
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/carrier.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/deserializers.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/formats.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/model.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/serializers.js" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "docs/formats.md" }
+  - predicates: [documents]
+    target: { kind: artifact, path: "examples/cases.json" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: ".github/workflows/ci.yml" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/carrier.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/core.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/debugger.test.mjs" }

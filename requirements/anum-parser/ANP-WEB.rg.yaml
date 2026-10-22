@@ -1,0 +1,36 @@
+format: repo-guard/requirement-v1
+id: ANP-WEB
+normative: "The browser laboratory and published static site MUST be reproducibly assembled from the accepted repository state and verified local dependencies, with browser acceptance covering the user-visible interaction surface."
+relations:
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: ".github/workflows/pages.yml" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "index.html" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "playwright.config.mjs" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "scripts/build-static-site.mjs" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "scripts/serve-static.mjs" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "src/app.js" }
+  - predicates: [implemented_by]
+    target: { kind: artifact, path: "styles.css" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/3d-acceptance.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/3d-fullscreen.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/3d-live-contract.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/3d-live-controls.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/3d-live-drag.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/blueprint-contract.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/blueprint-fidelity.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/browser/blueprint-view.spec.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/rooted-ui.test.mjs" }
