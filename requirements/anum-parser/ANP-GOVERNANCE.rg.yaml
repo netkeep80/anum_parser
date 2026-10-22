@@ -10,6 +10,8 @@ relations:
     target: { kind: artifact, path: "scripts/repo-guard-domain.mjs" }
   - predicates: [verified_by]
     target: { kind: artifact, path: "tests/repo-guard-native.test.mjs" }
+  - predicates: [verified_by]
+    target: { kind: artifact, path: "tests/repo-guard-legacy-native-differential.test.mjs" }
   - predicates: [documents]
     target: { kind: artifact, path: ".github/ISSUE_TEMPLATE/change-contract.yml" }
   - predicates: [documents]
